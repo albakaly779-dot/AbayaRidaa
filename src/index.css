@@ -1,0 +1,124 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand Colors */
+    --brand-navy: 222 40% 20%;
+    --brand-gold: 40 52% 55%;
+    --brand-gold-light: 40 52% 70%;
+    --brand-cream: 36 33% 96%;
+    
+    /* shadcn tokens */
+    --background: 36 33% 96%;
+    --foreground: 230 30% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 230 30% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 230 30% 12%;
+    --primary: 222 40% 20%;
+    --primary-foreground: 36 33% 96%;
+    --secondary: 40 52% 55%;
+    --secondary-foreground: 222 40% 15%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 46%;
+    --accent: 40 52% 55%;
+    --accent-foreground: 222 40% 15%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 14% 88%;
+    --input: 220 14% 88%;
+    --ring: 40 52% 55%;
+    --radius: 0.625rem;
+    
+    /* Sidebar */
+    --sidebar-background: 222 40% 16%;
+    --sidebar-foreground: 36 33% 92%;
+    --sidebar-primary: 40 52% 55%;
+    --sidebar-primary-foreground: 222 40% 12%;
+    --sidebar-accent: 222 35% 22%;
+    --sidebar-accent-foreground: 36 33% 92%;
+    --sidebar-border: 222 30% 24%;
+    --sidebar-ring: 40 52% 55%;
+    
+    /* Semantic */
+    --success: 160 60% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 217 71% 53%;
+    --info-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-cairo antialiased;
+    direction: rtl;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 3px;
+  }
+}
+
+/* Safe area for bottom nav */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Print styles */
+@media print {
+  body {
+    background: white !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  .print\:shadow-none {
+    box-shadow: none !important;
+  }
+  .print\:border-none {
+    border: none !important;
+  }
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+  .print\:max-w-none {
+    max-width: none !important;
+  }
+}
