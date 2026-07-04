@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Plus, Trash2, X, Users, ShieldCheck, Eye, Settings,
-  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2,
+  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -92,6 +92,7 @@ export default function Roles() {
   const [role, setRole] = useState<RoleKey>("support");
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
+  const [sendingReset, setSendingReset] = useState(false);
   const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string } | null>(null);
 
   const loadRoles = async () => {
@@ -227,6 +228,35 @@ export default function Roles() {
     toast.success("تم فتح واتساب — أرسل البيانات لنفسك");
   };
 
+  const sendCredentialsToAdminEmail = () => {
+    if (!credentials) return;
+    const subject = encodeURIComponent(`🔐 بيانات دخول جديدة - ${credentials.name}`);
+    const body = encodeURIComponent(
+      `تم إنشاء حساب جديد في نظام رداء:\n\n👤 الاسم: ${credentials.name}\n📧 البريد: ${credentials.email}\n🔑 كلمة المرور: ${credentials.password}\n🎭 الدور: ${credentials.role}\n\n⚠️ ملاحظة: يرجى مطالبة المستخدم بتغيير كلمة المرور بعد أول دخول.\n\n—\nنظام رداء 🌸`
+    );
+    window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_blank");
+    toast.success(`تم فتح البريد — أرسل البيانات إلى ${ADMIN_EMAIL}`);
+  };
+
+  const handleSendResetEmail = async () => {
+    if (!credentials) return;
+    setSendingReset(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(credentials.email, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) {
+        toast.error("فشل إرسال رابط إعادة التعيين: " + error.message);
+      } else {
+        toast.success(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${credentials.email}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "خطأ غير معروف";
+      toast.error("خطأ: " + msg);
+    }
+    setSendingReset(false);
+  };
+
   const sendInviteToUserViaEmail = () => {
     if (!credentials) return;
     const subject = encodeURIComponent("دعوة للانضمام إلى نظام رداء");
@@ -265,11 +295,11 @@ export default function Roles() {
           <div className="text-sm text-amber-900">
             <p className="font-bold mb-1">📌 كيف يعمل النظام الآن؟</p>
             <ul className="space-y-1 text-xs list-disc list-inside text-amber-800">
-              <li>عند إنشاء مستخدم جديد، يتم إنشاء حسابه فوراً (بدون رمز تحقق - بسبب أن التسجيل مغلق في النظام)</li>
-              <li>يُولّد النظام كلمة مرور تلقائياً ويعرضها لك مباشرة</li>
-              <li>تستطيع إرسال البيانات للمستخدم بنفسك عبر واتساب أو البريد</li>
-              <li>المستخدم يدخل مباشرة بالبريد + كلمة المرور — بدون OTP</li>
-              <li>يتم حفظ نسخة من البيانات في إشعاراتك للمراجعة لاحقاً</li>
+              <li>عند إنشاء مستخدم جديد، يتم إنشاء حسابه فوراً دون حاجة لرمز تحقق (تجاوز لقفل التسجيل)</li>
+              <li>توليد كلمة مرور تلقائية وعرضها لك مباشرة + حفظها في إشعاراتك</li>
+              <li>زر <b>"إرسال لإيميلي"</b>: يفتح بريدك مع البيانات جاهزة للإرسال إلى <b dir="ltr">{ADMIN_EMAIL}</b></li>
+              <li>زر <b>"رابط تحقق"</b>: يرسل رابط إعادة تعيين كلمة مرور تلقائياً للمستخدم عبر البريد</li>
+              <li>المستخدم يدخل مباشرة بالبريد + كلمة المرور — أو يطلب من رابط التعيين</li>
             </ul>
           </div>
         </div>
@@ -345,20 +375,29 @@ export default function Roles() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button onClick={sendCredentialsToAdminEmail}
+              className="flex items-center justify-center gap-2 rounded-xl bg-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-navy-light transition-colors shadow-md">
+              <MailPlus className="size-4" /> إرسال لإيميلي
+            </button>
+            <button onClick={handleSendResetEmail} disabled={sendingReset}
+              className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600 transition-colors shadow-md disabled:opacity-50">
+              {sendingReset ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+              رابط تحقق للمستخدم
+            </button>
             <button onClick={sendInviteToUserViaEmail}
-              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors">
+              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors">
               <Mail className="size-4" /> إيميل للمستخدم
             </button>
             <button onClick={sendInviteToUserViaWA}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors">
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors">
               <MessageCircle className="size-4" /> واتساب للمستخدم
             </button>
-            <button onClick={sendCredentialsToAdminWA}
-              className="flex items-center justify-center gap-2 rounded-xl bg-navy px-4 py-2.5 text-xs font-bold text-white hover:bg-navy-light transition-colors">
-              <Send className="size-4" /> إرسال لي ({ADMIN_EMAIL.split("@")[0]})
-            </button>
           </div>
+          <button onClick={sendCredentialsToAdminWA}
+            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-navy/20 bg-white px-3 py-2 text-xs font-semibold text-navy hover:bg-navy/5 transition-colors">
+            <Send className="size-3.5" /> إرسال لواتسابي الشخصي (نسخة احتياطية)
+          </button>
 
           <button onClick={() => setCredentials(null)}
             className="mt-3 w-full rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50">

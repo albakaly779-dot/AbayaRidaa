@@ -9,6 +9,7 @@ export interface FixedExpense {
 }
 
 export type InvoiceTemplate = "modern" | "classic" | "minimal";
+export type InvoicePageSize = "A4" | "A5" | "thermal80" | "thermal58";
 
 export interface AppSettings {
   // Business info
@@ -27,6 +28,9 @@ export interface AppSettings {
   invoiceTerms: string;
   invoiceShowBarcode: boolean;
   invoiceLogoUrl: string;
+  invoicePageSize: InvoicePageSize;
+  invoiceShowSignature: boolean;
+  invoiceCopyLabel: string;
 
   // Feature toggles
   featureWhatsapp: boolean;
@@ -61,6 +65,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   invoiceTerms: "",
   invoiceShowBarcode: true,
   invoiceLogoUrl: "",
+  invoicePageSize: "A4",
+  invoiceShowSignature: true,
+  invoiceCopyLabel: "نسخة العميل",
   featureWhatsapp: true,
   featureSmsAlerts: true,
   featureStockAlerts: true,

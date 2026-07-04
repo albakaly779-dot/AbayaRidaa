@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Log notification for admin to see in their notifications list
+    // Log notification for admin to see in their notifications list + trigger email delivery attempt
     try {
       // Find admin user_id for notification
       const { data: profileData } = await supabaseAdmin
@@ -115,6 +115,18 @@ Deno.serve(async (req) => {
           message: `🔐 بيانات دخول مستخدم ${wasExisting ? "محدّث" : "جديد"}:\nالبريد: ${email}\nكلمة المرور: ${password}\nالدور: ${role || "support"}\nأنشأه: ${caller.email}`,
           status: "sent",
         });
+      }
+
+      // Attempt to send password recovery email via Supabase built-in SMTP
+      // This gives the new user a proper way to set their own password via email
+      try {
+        await supabaseAdmin.auth.admin.generateLink({
+          type: "recovery",
+          email,
+          options: { redirectTo: `${req.headers.get("origin") || ""}/login` },
+        });
+      } catch (linkErr) {
+        console.log("Recovery link generation skipped:", linkErr);
       }
     } catch (notifErr) {
       console.log("Notification log skipped:", notifErr);

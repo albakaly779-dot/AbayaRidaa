@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useSettingsStore, type FixedExpense, type InvoiceTemplate } from "@/stores/settingsStore";
+import { useSettingsStore, type FixedExpense, type InvoiceTemplate, type InvoicePageSize } from "@/stores/settingsStore";
 import { useAuditStore } from "@/stores/auditStore";
 import { supabase } from "@/lib/supabase";
 import brandLogo from "@/assets/brand-logo.png";
@@ -38,6 +38,9 @@ export default function Settings() {
   const [invoiceTerms, setInvoiceTerms] = useState(settings.invoiceTerms);
   const [invoiceShowBarcode, setInvoiceShowBarcode] = useState(settings.invoiceShowBarcode);
   const [invoiceLogoUrl, setInvoiceLogoUrl] = useState(settings.invoiceLogoUrl);
+  const [invoicePageSize, setInvoicePageSize] = useState<InvoicePageSize>(settings.invoicePageSize);
+  const [invoiceShowSignature, setInvoiceShowSignature] = useState(settings.invoiceShowSignature);
+  const [invoiceCopyLabel, setInvoiceCopyLabel] = useState(settings.invoiceCopyLabel);
   const [uploadingInvoiceLogo, setUploadingInvoiceLogo] = useState(false);
 
   // Features
@@ -80,6 +83,9 @@ export default function Settings() {
     setInvoiceTerms(settings.invoiceTerms);
     setInvoiceShowBarcode(settings.invoiceShowBarcode);
     setInvoiceLogoUrl(settings.invoiceLogoUrl);
+    setInvoicePageSize(settings.invoicePageSize);
+    setInvoiceShowSignature(settings.invoiceShowSignature);
+    setInvoiceCopyLabel(settings.invoiceCopyLabel);
     setFeatureWhatsapp(settings.featureWhatsapp);
     setFeatureSmsAlerts(settings.featureSmsAlerts);
     setFeatureStockAlerts(settings.featureStockAlerts);
@@ -175,6 +181,7 @@ export default function Settings() {
         logoUrl,
         invoiceTemplate, invoicePrimaryColor, invoiceHeaderText, invoiceFooterText,
         invoiceTaxNumber, invoiceTerms, invoiceShowBarcode, invoiceLogoUrl,
+        invoicePageSize, invoiceShowSignature, invoiceCopyLabel,
         featureWhatsapp, featureSmsAlerts, featureStockAlerts,
         featureCommissions, featureReturns, featureExpenses, featureExport,
         fixedExpenses,
@@ -340,6 +347,33 @@ export default function Settings() {
               </div>
             </div>
 
+            {/* Page Size Selector */}
+            <div className="mb-5">
+              <label className="mb-2 block text-sm font-semibold text-gray-700">مقاس الورقة (يؤثر على الطباعة وحفظ PDF)</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {([
+                  { value: "A4", label: "A4", desc: "210×297مم", w: "h-14 w-10" },
+                  { value: "A5", label: "A5", desc: "148×210مم", w: "h-12 w-9" },
+                  { value: "thermal80", label: "حراري 80مم", desc: "إيصالات", w: "h-14 w-6" },
+                  { value: "thermal58", label: "حراري 58مم", desc: "POS", w: "h-14 w-4" },
+                ] as { value: InvoicePageSize; label: string; desc: string; w: string }[]).map((s) => (
+                  <button key={s.value} onClick={() => setInvoicePageSize(s.value)}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl p-3 transition-all ${
+                      invoicePageSize === s.value
+                        ? "bg-navy text-white ring-2 ring-navy/30"
+                        : "bg-cream/60 text-gray-600 hover:bg-cream"
+                    }`}>
+                    <div className={`${s.w} rounded border-2 ${invoicePageSize === s.value ? "bg-white/20 border-white" : "bg-white border-gray-300"}`} />
+                    <span className="text-[11px] font-bold">{s.label}</span>
+                    <span className={`text-[9px] ${invoicePageSize === s.value ? "text-white/70" : "text-gray-400"}`}>{s.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-gray-500">
+                💡 A4 للفواتير الرسمية • A5 للفواتير المختصرة • حراري للطابعات الحرارية (POS)
+              </p>
+            </div>
+
             {/* Color & Toggles */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-5">
               <div>
@@ -417,6 +451,24 @@ export default function Settings() {
                   className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none"
                   placeholder="مثال: 12345678 - اختياري" dir="ltr" />
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">تسمية النسخة (تظهر في الرأس)</label>
+                  <input value={invoiceCopyLabel} onChange={(e) => setInvoiceCopyLabel(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none"
+                    placeholder="مثال: نسخة العميل / الأصل" />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">توقيع المستلم</label>
+                  <button onClick={() => setInvoiceShowSignature(!invoiceShowSignature)}
+                    className={`flex w-full items-center justify-between rounded-xl px-4 py-2.5 text-sm transition-colors ${
+                      invoiceShowSignature ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                    }`}>
+                    <span className="font-semibold">{invoiceShowSignature ? "يظهر في الفاتورة" : "مخفي"}</span>
+                    {invoiceShowSignature ? <ToggleRight className="size-5" /> : <ToggleLeft className="size-5" />}
+                  </button>
+                </div>
+              </div>
               <div>
                 <label className="mb-1.5 block text-sm font-semibold text-gray-700">الشروط والأحكام (تظهر أسفل الفاتورة)</label>
                 <textarea value={invoiceTerms} onChange={(e) => setInvoiceTerms(e.target.value)} rows={3}
@@ -427,16 +479,25 @@ export default function Settings() {
 
             {/* Live Preview */}
             <div className="rounded-xl border-2 border-dashed border-gray-200 p-4 bg-cream/20">
-              <p className="mb-2 text-[10px] font-bold text-gray-500">معاينة مباشرة:</p>
+              <p className="mb-2 text-[10px] font-bold text-gray-500">
+                معاينة مباشرة — <span className="text-emerald-600">{invoicePageSize === "A4" ? "ورقة A4 (210×297مم)" : invoicePageSize === "A5" ? "ورقة A5 (148×210مم)" : invoicePageSize === "thermal80" ? "طابعة حرارية 80مم" : "طابعة حرارية 58مم"}</span>
+              </p>
               <div className="rounded-lg bg-white p-3 shadow-sm" style={{ borderInlineStart: `4px solid ${invoicePrimaryColor}` }}>
                 <div className="flex items-center gap-2">
                   <img src={displayInvoiceLogo} alt="" className="size-8 rounded object-cover" />
-                  <div>
+                  <div className="flex-1">
                     <p className="text-xs font-bold" style={{ color: invoicePrimaryColor }}>{businessName}</p>
                     <p className="text-[9px] text-gray-400">{invoiceHeaderText}</p>
                   </div>
+                  {invoiceCopyLabel && (
+                    <span className="rounded bg-cream px-1.5 py-0.5 text-[8px] font-bold" style={{ color: invoicePrimaryColor }}>{invoiceCopyLabel}</span>
+                  )}
                 </div>
               </div>
+              <a href="/invoice/preview" onClick={(e) => { e.preventDefault(); window.open("/invoice/preview", "_blank"); }}
+                className="mt-2 inline-block text-[10px] font-semibold text-gold hover:text-gold-dark">
+                جرّب فاتورة من صفحة الطلبات ←
+              </a>
             </div>
           </div>
 
