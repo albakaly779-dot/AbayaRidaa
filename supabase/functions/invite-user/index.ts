@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { email, password, role, fullName } = body;
+    const { email, password, role, fullName, sendEmail } = body;
 
     if (!email || !password) {
       return new Response(
@@ -63,6 +63,7 @@ Deno.serve(async (req) => {
           username: fullName || email.split("@")[0],
           invited_by: caller.email,
           assigned_role: role || "support",
+          must_change_password: true,
           created_at: new Date().toISOString(),
         },
       });
@@ -85,6 +86,7 @@ Deno.serve(async (req) => {
           ...(existingUser.user_metadata || {}),
           username: fullName || existingUser.user_metadata?.username || email.split("@")[0],
           assigned_role: role || existingUser.user_metadata?.assigned_role || "support",
+          must_change_password: true,
           last_password_reset: new Date().toISOString(),
         },
       });
@@ -128,9 +130,71 @@ Deno.serve(async (req) => {
       } catch (linkErr) {
         console.log("Recovery link generation skipped:", linkErr);
       }
+
+      // If sendEmail flag is set, attempt to send credentials via custom SMTP
+      let emailSent = false;
+      let emailError = "";
+      if (sendEmail && profileData?.id) {
+        try {
+          const { data: smtpRows } = await supabaseAdmin
+            .from("app_settings")
+            .select("key, value")
+            .eq("user_id", profileData.id)
+            .in("key", ["smtpEnabled", "smtpHost", "smtpPort", "smtpUser", "smtpPassword", "smtpFromEmail", "smtpFromName", "smtpUseTls"]);
+
+          const cfg: Record<string, string> = {};
+          (smtpRows || []).forEach((r: { key: string; value: string }) => { cfg[r.key] = r.value; });
+
+          if (cfg.smtpEnabled === "true" && cfg.smtpHost && cfg.smtpUser) {
+            const { SMTPClient } = await import("https://deno.land/x/denomailer@1.6.0/mod.ts");
+            const smtpClient = new SMTPClient({
+              connection: {
+                hostname: cfg.smtpHost,
+                port: parseInt(cfg.smtpPort || "587"),
+                tls: cfg.smtpUseTls === "true",
+                auth: { username: cfg.smtpUser, password: cfg.smtpPassword },
+              },
+            });
+
+            const roleLabel = role === "super_admin" ? "مشرف عام" : role === "operations_manager" ? "مدير عمليات" : role === "rep" ? "مندوب مبيعات" : "دعم فني";
+            const html = `<div dir="rtl" style="font-family:Cairo,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;background:#f8f6f0;border-radius:12px">
+              <h2 style="color:#1a2332;text-align:center">🌸 مرحباً ${fullName || email.split("@")[0]}</h2>
+              <p>تم إنشاء حسابك في نظام <b>رداء</b> لإدارة المبيعات.</p>
+              <div style="background:white;padding:20px;border-radius:10px;margin:20px 0;border-right:4px solid #c9a84c">
+                <p><b>📧 البريد:</b> <span style="font-family:monospace">${email}</span></p>
+                <p><b>🔑 كلمة المرور:</b> <span style="font-family:monospace;background:#fef3c7;padding:4px 8px;border-radius:4px">${password}</span></p>
+                <p><b>🎭 الدور:</b> ${roleLabel}</p>
+              </div>
+              <p style="color:#dc2626">⚠️ <b>مهم:</b> يُطلب منك تغيير كلمة المرور بعد أول تسجيل دخول لأسباب أمنية.</p>
+              <p style="text-align:center;margin-top:30px"><a href="${req.headers.get("origin") || ""}/login" style="background:#1a2332;color:white;padding:12px 30px;text-decoration:none;border-radius:8px;display:inline-block">🔐 تسجيل الدخول الآن</a></p>
+              <hr style="margin:30px 0;border:none;border-top:1px solid #eee">
+              <p style="color:#999;font-size:12px;text-align:center">نظام رداء لإدارة المبيعات · لا ترد على هذا البريد</p>
+            </div>`;
+
+            await smtpClient.send({
+              from: `${cfg.smtpFromName || "رداء"} <${cfg.smtpFromEmail || cfg.smtpUser}>`,
+              to: email,
+              subject: `🌸 حسابك في نظام رداء - بيانات الدخول`,
+              content: `مرحباً ${fullName || email},\n\nتم إنشاء حسابك في نظام رداء.\nالبريد: ${email}\nكلمة المرور: ${password}\nالدور: ${roleLabel}\n\nيرجى تغيير كلمة المرور بعد الدخول.`,
+              html,
+            });
+            await smtpClient.close();
+            emailSent = true;
+          } else {
+            emailError = "SMTP غير مفعّل — قم بضبطه من صفحة الإعدادات";
+          }
+        } catch (smtpErr) {
+          emailError = smtpErr instanceof Error ? smtpErr.message : "خطأ SMTP";
+          console.error("SMTP send failed:", emailError);
+        }
+      }
+
+      (globalThis as { __emailResult?: { sent: boolean; error: string } }).__emailResult = { sent: emailSent, error: emailError };
     } catch (notifErr) {
       console.log("Notification log skipped:", notifErr);
     }
+
+    const emailResult = (globalThis as { __emailResult?: { sent: boolean; error: string } }).__emailResult || { sent: false, error: "" };
 
     return new Response(
       JSON.stringify({
@@ -140,6 +204,8 @@ Deno.serve(async (req) => {
         email,
         password,
         adminEmail: ADMIN_EMAIL,
+        emailSent: emailResult.sent,
+        emailError: emailResult.error,
         message: wasExisting
           ? "تم تحديث الحساب وكلمة المرور بنجاح"
           : "تم إنشاء الحساب بنجاح — جاهز للدخول الفوري",

@@ -2,7 +2,7 @@ import { useLocation, Link } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingBag, Users, Package, AlertTriangle,
   Truck, RotateCcw, Receipt, UserCheck, FileText, Bell, Download,
-  Settings, LogOut, X, ClipboardList, Upload, Zap, Shield, Image, BarChart3, PhoneCall,
+  Settings, LogOut, X, ClipboardList, Upload, Zap, Shield, Image, BarChart3, PhoneCall, KeyRound,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -112,6 +112,10 @@ export default function Sidebar({ mobileOpen, onClose }: Props) {
               </div>
             </div>
           )}
+          <Link to="/change-password" onClick={onClose}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+            <KeyRound className="size-[18px]" /> تغيير كلمة المرور
+          </Link>
           <button onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/10 transition-colors">
             <LogOut className="size-[18px]" /> تسجيل الخروج

@@ -14,6 +14,8 @@ export interface AuthUser {
   username: string;
   avatar?: string;
   role?: UserRole;
+  mustChangePassword?: boolean;
+  lastPasswordChange?: string;
 }
 
 export function mapSupabaseUser(user: User): AuthUser {
@@ -23,6 +25,8 @@ export function mapSupabaseUser(user: User): AuthUser {
     username: user.user_metadata?.username || user.user_metadata?.full_name || user.email!.split("@")[0],
     avatar: user.user_metadata?.avatar_url,
     role: user.email === ALLOWED_EMAIL ? "admin" : undefined,
+    mustChangePassword: user.user_metadata?.must_change_password === true,
+    lastPasswordChange: user.user_metadata?.password_last_changed,
   };
 }
 

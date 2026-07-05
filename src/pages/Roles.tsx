@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
-  Plus, Trash2, X, Users, ShieldCheck, Eye, Settings,
-  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus,
+  Plus, Trash2, Users, ShieldCheck, Eye, Settings,
+  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus, Activity, FileSpreadsheet, MailCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuditStore } from "@/stores/auditStore";
 import { supabase } from "@/lib/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 interface UserRole {
   id: string;
@@ -32,7 +34,7 @@ interface RoleDef {
 const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   super_admin: {
     label: "مشرف عام",
-    desc: "صلاحية كاملة — تعديل الإعدادات وحذف البيانات",
+    desc: "صلاحية كاملة",
     icon: ShieldCheck,
     color: "bg-red-50 text-red-700 border-red-200",
     iconColor: "text-red-600",
@@ -40,7 +42,7 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   },
   operations_manager: {
     label: "مدير عمليات",
-    desc: "إدارة الطلبات والمنتجات والعملاء — بدون الإعدادات الحساسة",
+    desc: "إدارة الطلبات والمنتجات",
     icon: Settings,
     color: "bg-blue-50 text-blue-700 border-blue-200",
     iconColor: "text-blue-600",
@@ -48,7 +50,7 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   },
   support: {
     label: "دعم فني",
-    desc: "مشاهدة البيانات فقط — بدون تعديل أو حذف",
+    desc: "مشاهدة البيانات فقط",
     icon: Eye,
     color: "bg-emerald-50 text-emerald-700 border-emerald-200",
     iconColor: "text-emerald-600",
@@ -56,7 +58,7 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   },
   rep: {
     label: "مندوب مبيعات",
-    desc: "إدخال بيانات العملاء فقط — بدون رؤية الأرباح أو التكاليف",
+    desc: "إدخال بيانات العملاء فقط",
     icon: Users,
     color: "bg-amber-50 text-amber-700 border-amber-200",
     iconColor: "text-amber-600",
@@ -65,12 +67,8 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
 };
 
 const FALLBACK_CONFIG: RoleDef = {
-  label: "غير محدد",
-  desc: "دور غير معروف",
-  icon: Users,
-  color: "bg-gray-50 text-gray-700 border-gray-200",
-  iconColor: "text-gray-500",
-  permissions: [],
+  label: "غير محدد", desc: "دور غير معروف", icon: Users,
+  color: "bg-gray-50 text-gray-700 border-gray-200", iconColor: "text-gray-500", permissions: [],
 };
 
 const ADMIN_EMAIL = "albakaly779@gmail.com";
@@ -85,6 +83,7 @@ function generatePassword(): string {
 export default function Roles() {
   const { user } = useAuth();
   const { logAction } = useAuditStore();
+  const { settings, initializeSettings } = useSettingsStore();
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState("");
@@ -93,34 +92,41 @@ export default function Roles() {
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
-  const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string } | null>(null);
+  const [sendViaSmtp, setSendViaSmtp] = useState(false);
+  const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string; emailSent?: boolean; emailError?: string } | null>(null);
+  const [activityCounts, setActivityCounts] = useState<Record<string, { total: number; lastActivity?: string }>>({});
+
+  useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
 
   const loadRoles = async () => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
+    if (!user?.id) { setLoading(false); return; }
+    const { data, error } = await supabase.from("user_roles").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+    if (error) { toast.error("فشل تحميل الصلاحيات: " + error.message); setLoading(false); return; }
+
+    const mapped = (data || []).map((r: { id: string; assigned_user_email: string; role: string; permissions: string; is_active: boolean; created_at: string }) => ({
+      id: r.id, assignedUserEmail: r.assigned_user_email, role: (r.role as RoleKey) || "support",
+      permissions: r.permissions, isActive: r.is_active, createdAt: r.created_at,
+    }));
+    setRoles(mapped);
+
+    // Fetch activity counts per user
+    if (mapped.length > 0) {
+      const emails = mapped.map((r) => r.assignedUserEmail);
+      const { data: activities } = await supabase
+        .from("user_activity_logs")
+        .select("user_email, created_at")
+        .in("user_email", emails)
+        .order("created_at", { ascending: false })
+        .limit(1000);
+
+      const counts: Record<string, { total: number; lastActivity?: string }> = {};
+      (activities || []).forEach((a: { user_email: string; created_at: string }) => {
+        if (!counts[a.user_email]) counts[a.user_email] = { total: 0, lastActivity: a.created_at };
+        counts[a.user_email].total += 1;
+      });
+      setActivityCounts(counts);
     }
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
-    if (error) {
-      console.error("Failed to load roles:", error);
-      toast.error("فشل تحميل الصلاحيات: " + error.message);
-      setLoading(false);
-      return;
-    }
-    setRoles(
-      (data || []).map((r: { id: string; assigned_user_email: string; role: string; permissions: string; is_active: boolean; created_at: string }) => ({
-        id: r.id,
-        assignedUserEmail: r.assigned_user_email,
-        role: (r.role as RoleKey) || "support",
-        permissions: r.permissions,
-        isActive: r.is_active,
-        createdAt: r.created_at,
-      }))
-    );
+
     setLoading(false);
   };
 
@@ -128,9 +134,8 @@ export default function Roles() {
 
   const handleAddRole = async () => {
     if (!user?.id) return;
-    if (!email.trim()) { toast.error("البريد الإلكتروني مطلوب"); return; }
+    if (!email.trim() || !email.includes("@")) { toast.error("البريد الإلكتروني غير صحيح"); return; }
     if (email.trim() === user.email) { toast.error("لا يمكنك إضافة نفسك"); return; }
-    if (!email.includes("@")) { toast.error("صيغة البريد الإلكتروني غير صحيحة"); return; }
 
     setInviting(true);
     const config = ROLE_CONFIG[role] || FALLBACK_CONFIG;
@@ -138,62 +143,52 @@ export default function Roles() {
     const userName = fullName.trim() || email.split("@")[0];
 
     try {
-      // 1. Call edge function to create user via admin API (bypasses disabled signups)
       const { data: inviteData, error: inviteError } = await supabase.functions.invoke("invite-user", {
-        body: {
-          email: email.trim(),
-          password,
-          role,
-          fullName: userName,
-        },
+        body: { email: email.trim(), password, role, fullName: userName, sendEmail: sendViaSmtp && settings.smtpEnabled },
       });
 
       if (inviteError) {
         let errorMsg = inviteError.message;
         if (inviteError instanceof FunctionsHttpError) {
-          try {
-            const text = await inviteError.context?.text();
-            errorMsg = text || errorMsg;
-          } catch { /* ignore */ }
+          try { errorMsg = await inviteError.context?.text() || errorMsg; } catch { /* ignore */ }
         }
-        toast.error("فشل إنشاء الحساب: " + errorMsg);
+        toast.error("فشل: " + errorMsg);
         setInviting(false);
         return;
       }
 
       if (!inviteData?.success) {
-        toast.error("فشل إنشاء الحساب: " + (inviteData?.error || "خطأ غير معروف"));
+        toast.error("فشل: " + (inviteData?.error || "خطأ"));
         setInviting(false);
         return;
       }
 
-      // 2. Save role assignment in user_roles table
       const { error: roleError } = await supabase.from("user_roles").upsert({
-        user_id: user.id,
-        assigned_user_email: email.trim(),
-        role,
-        permissions: JSON.stringify(config.permissions),
-        is_active: true,
+        user_id: user.id, assigned_user_email: email.trim(), role,
+        permissions: JSON.stringify(config.permissions), is_active: true,
       }, { onConflict: "user_id,assigned_user_email" });
 
-      if (roleError) {
-        console.error("Role save error:", roleError);
-        toast.error("الحساب أُنشئ لكن فشل حفظ الدور: " + roleError.message);
+      if (roleError) toast.error("الحساب أُنشئ لكن فشل حفظ الدور: " + roleError.message);
+
+      setCredentials({
+        email: email.trim(), password, role: config.label, name: userName,
+        emailSent: inviteData.emailSent, emailError: inviteData.emailError,
+      });
+
+      logAction(user.id, "create", "role", undefined, `إنشاء حساب ${email.trim()} بدور ${config.label}${inviteData.emailSent ? " (إرسال ناجح)" : ""}`);
+
+      if (inviteData.emailSent) {
+        toast.success("✅ تم إنشاء الحساب وإرسال البيانات بالبريد");
+      } else if (sendViaSmtp && inviteData.emailError) {
+        toast.warning(`الحساب أُنشئ. لكن فشل إرسال البريد: ${inviteData.emailError}`);
+      } else {
+        toast.success(inviteData.wasExisting ? "تم تحديث كلمة المرور" : "تم إنشاء الحساب — جاهز للاستخدام");
       }
 
-      // 3. Show credentials to admin
-      setCredentials({ email: email.trim(), password, role: config.label, name: userName });
-
-      logAction(user.id, "create", "role", undefined, `إنشاء حساب ${email.trim()} بدور ${config.label}`);
-      toast.success(inviteData.wasExisting ? "تم تحديث كلمة المرور" : "تم إنشاء الحساب — جاهز للاستخدام فوراً");
-
-      setEmail("");
-      setFullName("");
-      setShowForm(false);
+      setEmail(""); setFullName(""); setShowForm(false);
       loadRoles();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "خطأ غير معروف";
-      toast.error("فشل العملية: " + msg);
+      toast.error("خطأ: " + (err instanceof Error ? err.message : "غير معروف"));
     }
     setInviting(false);
   };
@@ -212,7 +207,7 @@ export default function Roles() {
     const newActive = !target.isActive;
     await supabase.from("user_roles").update({ is_active: newActive }).eq("id", id);
     setRoles((prev) => prev.map((r) => (r.id === id ? { ...r, isActive: newActive } : r)));
-    toast.success(newActive ? "تم تفعيل الدور" : "تم تعطيل الدور");
+    toast.success(newActive ? "تم التفعيل" : "تم التعطيل");
   };
 
   const copyToClipboard = (text: string) => {
@@ -220,22 +215,11 @@ export default function Roles() {
     toast.success("تم النسخ");
   };
 
-  const sendCredentialsToAdminWA = () => {
-    if (!credentials) return;
-    const message = `🔐 بيانات دخول مستخدم جديد في نظام رداء:\n\n👤 الاسم: ${credentials.name}\n📧 البريد: ${credentials.email}\n🔑 كلمة المرور: ${credentials.password}\n🎭 الدور: ${credentials.role}\n\n⚠️ يرجى مطالبة المستخدم بتغيير كلمة المرور بعد أول تسجيل دخول.`;
-    const encoded = encodeURIComponent(message);
-    window.open(`https://wa.me/967779673273?text=${encoded}`, "_blank");
-    toast.success("تم فتح واتساب — أرسل البيانات لنفسك");
-  };
-
   const sendCredentialsToAdminEmail = () => {
     if (!credentials) return;
-    const subject = encodeURIComponent(`🔐 بيانات دخول جديدة - ${credentials.name}`);
-    const body = encodeURIComponent(
-      `تم إنشاء حساب جديد في نظام رداء:\n\n👤 الاسم: ${credentials.name}\n📧 البريد: ${credentials.email}\n🔑 كلمة المرور: ${credentials.password}\n🎭 الدور: ${credentials.role}\n\n⚠️ ملاحظة: يرجى مطالبة المستخدم بتغيير كلمة المرور بعد أول دخول.\n\n—\nنظام رداء 🌸`
-    );
+    const subject = encodeURIComponent(`🔐 بيانات دخول - ${credentials.name}`);
+    const body = encodeURIComponent(`حساب جديد:\n\nالاسم: ${credentials.name}\nالبريد: ${credentials.email}\nكلمة المرور: ${credentials.password}\nالدور: ${credentials.role}\n\n—\nرداء 🌸`);
     window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_blank");
-    toast.success(`تم فتح البريد — أرسل البيانات إلى ${ADMIN_EMAIL}`);
   };
 
   const handleSendResetEmail = async () => {
@@ -245,34 +229,16 @@ export default function Roles() {
       const { error } = await supabase.auth.resetPasswordForEmail(credentials.email, {
         redirectTo: `${window.location.origin}/login`,
       });
-      if (error) {
-        toast.error("فشل إرسال رابط إعادة التعيين: " + error.message);
-      } else {
-        toast.success(`تم إرسال رابط إعادة تعيين كلمة المرور إلى ${credentials.email}`);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "خطأ غير معروف";
-      toast.error("خطأ: " + msg);
-    }
+      if (error) toast.error("فشل: " + error.message);
+      else toast.success(`تم إرسال رابط إعادة التعيين إلى ${credentials.email}`);
+    } catch (err) { toast.error("خطأ: " + (err instanceof Error ? err.message : "غير معروف")); }
     setSendingReset(false);
-  };
-
-  const sendInviteToUserViaEmail = () => {
-    if (!credentials) return;
-    const subject = encodeURIComponent("دعوة للانضمام إلى نظام رداء");
-    const body = encodeURIComponent(
-      `مرحباً ${credentials.name}،\n\nتم إنشاء حسابك في نظام رداء لإدارة المبيعات.\n\n📧 البريد: ${credentials.email}\n🔑 كلمة المرور: ${credentials.password}\n🎭 الدور: ${credentials.role}\n\nيمكنك الآن تسجيل الدخول مباشرة باستخدام البيانات أعلاه.\n⚠️ يُنصح بتغيير كلمة المرور بعد أول تسجيل دخول.\n\nشكراً لك،\nرداء 🌸`
-    );
-    window.open(`mailto:${credentials.email}?subject=${subject}&body=${body}`, "_blank");
-    toast.success("تم فتح البريد لإرسال الدعوة");
   };
 
   const sendInviteToUserViaWA = () => {
     if (!credentials) return;
-    const message = `مرحباً ${credentials.name} 👋\n\nتم إنشاء حسابك في نظام رداء.\n\n📧 البريد: ${credentials.email}\n🔑 كلمة المرور: ${credentials.password}\n🎭 الدور: ${credentials.role}\n\nسجل دخولك مباشرة بهذه البيانات. ⚠️ غيّر كلمة المرور بعد أول دخول.\n\nرداء 🌸`;
-    const encoded = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encoded}`, "_blank");
-    toast.success("تم فتح واتساب لإرسال البيانات");
+    const message = `مرحباً ${credentials.name} 👋\n\nحسابك في نظام رداء:\n📧 ${credentials.email}\n🔑 ${credentials.password}\n🎭 ${credentials.role}\n\n⚠️ غيّر كلمة المرور بعد أول دخول.\n\nرداء 🌸`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   };
 
   return (
@@ -280,27 +246,43 @@ export default function Roles() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-navy lg:text-2xl">إدارة الصلاحيات (RBAC)</h1>
-          <p className="text-sm text-gray-500">إنشاء حسابات للمستخدمين بصلاحيات محددة — يتم إنشاء الحساب فوراً وعرض البيانات لك</p>
+          <p className="text-sm text-gray-500">إنشاء حسابات فردية، استيراد جماعي، وسجل نشاط لكل مستخدم</p>
         </div>
-        <button onClick={() => { setShowForm(!showForm); setCredentials(null); }}
-          className="flex items-center gap-2 rounded-xl bg-navy px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-navy/20 hover:bg-navy-light transition-all active:scale-[0.98]">
-          <Plus className="size-4" /> إنشاء حساب جديد
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <Link to="/bulk-import-users"
+            className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 hover:bg-emerald-600 transition-all">
+            <FileSpreadsheet className="size-4" /> استيراد جماعي CSV
+          </Link>
+          <button onClick={() => { setShowForm(!showForm); setCredentials(null); }}
+            className="flex items-center gap-2 rounded-xl bg-navy px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-navy/20 hover:bg-navy-light active:scale-[0.98]">
+            <Plus className="size-4" /> إنشاء حساب جديد
+          </button>
+        </div>
       </div>
 
-      {/* Important notice about how it works */}
+      {/* Info banner */}
       <div className="rounded-2xl bg-amber-50 border-2 border-amber-300 p-5">
         <div className="flex items-start gap-3">
           <AlertCircle className="size-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="text-sm text-amber-900">
-            <p className="font-bold mb-1">📌 كيف يعمل النظام الآن؟</p>
+            <p className="font-bold mb-1">📌 كيف يعمل النظام؟</p>
             <ul className="space-y-1 text-xs list-disc list-inside text-amber-800">
-              <li>عند إنشاء مستخدم جديد، يتم إنشاء حسابه فوراً دون حاجة لرمز تحقق (تجاوز لقفل التسجيل)</li>
-              <li>توليد كلمة مرور تلقائية وعرضها لك مباشرة + حفظها في إشعاراتك</li>
-              <li>زر <b>"إرسال لإيميلي"</b>: يفتح بريدك مع البيانات جاهزة للإرسال إلى <b dir="ltr">{ADMIN_EMAIL}</b></li>
-              <li>زر <b>"رابط تحقق"</b>: يرسل رابط إعادة تعيين كلمة مرور تلقائياً للمستخدم عبر البريد</li>
-              <li>المستخدم يدخل مباشرة بالبريد + كلمة المرور — أو يطلب من رابط التعيين</li>
+              <li>الحسابات تُنشأ فوراً دون رمز تحقق (تجاوز لقفل التسجيل)</li>
+              <li>كلمة مرور تلقائية + عرضها لك مباشرة + حفظ في إشعاراتك</li>
+              <li>إذا كان SMTP مفعّلاً في الإعدادات، تصل بيانات الدخول للمستخدم بالبريد تلقائياً</li>
+              <li>يُطلب من كل مستخدم تغيير كلمة المرور المؤقتة بعد أول دخول</li>
+              <li>يمكنك عرض سجل نشاط كل مستخدم من زر <b>"عرض النشاط"</b></li>
             </ul>
+            {!settings.smtpEnabled && (
+              <p className="mt-2 text-xs bg-white/60 rounded p-2 flex items-center gap-2">
+                ⚠️ SMTP غير مفعّل — <Link to="/settings" className="font-bold underline hover:text-amber-900">فعّله من الإعدادات</Link> لإرسال البيانات تلقائياً
+              </p>
+            )}
+            {settings.smtpEnabled && (
+              <p className="mt-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2 flex items-center gap-2 text-emerald-700">
+                ✅ SMTP مفعّل — يمكن إرسال البيانات تلقائياً عبر <b>{settings.smtpFromEmail || settings.smtpUser}</b>
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -328,81 +310,61 @@ export default function Roles() {
         ))}
       </div>
 
-      {/* Generated credentials card */}
+      {/* Credentials card */}
       {credentials && (
         <div className="rounded-2xl bg-gradient-to-l from-emerald-50 to-white p-5 border-2 border-emerald-300 shadow-md">
           <div className="flex items-center gap-3 mb-4">
             <div className="rounded-xl bg-emerald-100 p-2.5"><CheckCircle2 className="size-5 text-emerald-700" /></div>
-            <div>
+            <div className="flex-1">
               <h3 className="text-sm font-bold text-navy">✅ تم إنشاء الحساب بنجاح</h3>
-              <p className="text-xs text-gray-500">احفظ هذه البيانات أو أرسلها للمستخدم — يستطيع الدخول فوراً</p>
+              {credentials.emailSent ? (
+                <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
+                  <MailCheck className="size-3.5" /> تم إرسال البيانات لبريد المستخدم تلقائياً
+                </p>
+              ) : credentials.emailError ? (
+                <p className="text-xs text-amber-700">⚠️ لم يتم إرسال البريد: {credentials.emailError}</p>
+              ) : (
+                <p className="text-xs text-gray-500">احفظ البيانات وأرسلها للمستخدم</p>
+              )}
             </div>
           </div>
 
           <div className="space-y-3 mb-4">
             <div className="flex items-center justify-between rounded-xl bg-white p-3 border">
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-gray-400">الاسم الكامل</p>
-                <p className="text-sm font-bold text-navy truncate">{credentials.name}</p>
-              </div>
-              <button onClick={() => copyToClipboard(credentials.name)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
-                <Copy className="size-4" />
-              </button>
-            </div>
-            <div className="flex items-center justify-between rounded-xl bg-white p-3 border">
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-gray-400">البريد الإلكتروني</p>
+                <p className="text-[10px] text-gray-400">البريد</p>
                 <p className="text-sm font-bold text-navy truncate" dir="ltr">{credentials.email}</p>
               </div>
-              <button onClick={() => copyToClipboard(credentials.email)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100">
-                <Copy className="size-4" />
-              </button>
+              <button onClick={() => copyToClipboard(credentials.email)} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100"><Copy className="size-4" /></button>
             </div>
             <div className="flex items-center justify-between rounded-xl bg-amber-50 border-2 border-amber-300 p-3">
               <div className="flex-1 min-w-0">
                 <p className="text-[10px] text-amber-700 font-semibold">🔑 كلمة المرور المؤقتة</p>
                 <p className="text-base font-bold text-navy font-mono tracking-wider" dir="ltr">{credentials.password}</p>
               </div>
-              <button onClick={() => copyToClipboard(credentials.password)} className="rounded-lg p-2 text-amber-700 hover:bg-amber-100">
-                <Copy className="size-4" />
-              </button>
-            </div>
-            <div className="flex items-center justify-between rounded-xl bg-white p-3 border">
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-gray-400">الدور المخصص</p>
-                <p className="text-sm font-bold text-navy">{credentials.role}</p>
-              </div>
+              <button onClick={() => copyToClipboard(credentials.password)} className="rounded-lg p-2 text-amber-700 hover:bg-amber-100"><Copy className="size-4" /></button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <button onClick={sendCredentialsToAdminEmail}
-              className="flex items-center justify-center gap-2 rounded-xl bg-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-navy-light transition-colors shadow-md">
+              className="flex items-center justify-center gap-2 rounded-xl bg-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-navy-light">
               <MailPlus className="size-4" /> إرسال لإيميلي
             </button>
             <button onClick={handleSendResetEmail} disabled={sendingReset}
-              className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600 transition-colors shadow-md disabled:opacity-50">
+              className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50">
               {sendingReset ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-              رابط تحقق للمستخدم
-            </button>
-            <button onClick={sendInviteToUserViaEmail}
-              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-700 transition-colors">
-              <Mail className="size-4" /> إيميل للمستخدم
+              رابط تحقق
             </button>
             <button onClick={sendInviteToUserViaWA}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition-colors">
-              <MessageCircle className="size-4" /> واتساب للمستخدم
+              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-700">
+              <MessageCircle className="size-4" /> واتساب
+            </button>
+            <button onClick={() => setCredentials(null)}
+              className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50">
+              ✕ إغلاق
             </button>
           </div>
-          <button onClick={sendCredentialsToAdminWA}
-            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border-2 border-navy/20 bg-white px-3 py-2 text-xs font-semibold text-navy hover:bg-navy/5 transition-colors">
-            <Send className="size-3.5" /> إرسال لواتسابي الشخصي (نسخة احتياطية)
-          </button>
-
-          <button onClick={() => setCredentials(null)}
-            className="mt-3 w-full rounded-xl border border-gray-200 px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50">
-            ✕ إغلاق
-          </button>
         </div>
       )}
 
@@ -410,18 +372,17 @@ export default function Roles() {
       {showForm && (
         <div className="rounded-2xl bg-white p-5 border border-gray-100 shadow-sm space-y-4">
           <h3 className="text-sm font-bold text-navy flex items-center gap-2"><Mail className="size-4" /> إنشاء حساب مستخدم جديد</h3>
-          <p className="text-xs text-gray-400">سيتم إنشاء الحساب فوراً وعرض البيانات لك لإرسالها للمستخدم</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-1">
-              <label className="mb-1.5 block text-xs font-semibold text-gray-700">الاسم الكامل (اختياري)</label>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold text-gray-700">الاسم الكامل</label>
               <input value={fullName} onChange={(e) => setFullName(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20"
-                placeholder="مثال: أحمد محمد" />
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none"
+                placeholder="أحمد محمد" />
             </div>
-            <div className="sm:col-span-1">
+            <div>
               <label className="mb-1.5 block text-xs font-semibold text-gray-700">البريد الإلكتروني</label>
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20"
+                className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none"
                 placeholder="user@example.com" dir="ltr" />
             </div>
             <div>
@@ -435,65 +396,97 @@ export default function Roles() {
               </select>
             </div>
           </div>
+
+          {settings.smtpEnabled && (
+            <label className="flex items-center gap-2 cursor-pointer rounded-xl bg-blue-50 border border-blue-200 p-3">
+              <input type="checkbox" checked={sendViaSmtp} onChange={(e) => setSendViaSmtp(e.target.checked)}
+                className="size-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500" />
+              <span className="text-xs font-semibold text-blue-800 flex items-center gap-2">
+                <MailCheck className="size-4" /> أرسل بيانات الدخول تلقائياً لبريد المستخدم عبر SMTP
+              </span>
+            </label>
+          )}
+
           <div className="flex gap-3">
             <button onClick={() => setShowForm(false)} className="rounded-xl border border-gray-200 px-6 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">إلغاء</button>
             <button onClick={handleAddRole} disabled={inviting}
-              className="flex items-center gap-2 rounded-xl bg-navy px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-navy/20 hover:bg-navy-light transition-all disabled:opacity-50">
+              className="flex items-center gap-2 rounded-xl bg-navy px-6 py-2.5 text-sm font-bold text-white shadow-lg hover:bg-navy-light disabled:opacity-50">
               {inviting ? <Loader2 className="size-4 animate-spin" /> : <Key className="size-4" />}
-              {inviting ? "جاري إنشاء الحساب..." : "إنشاء الحساب الآن"}
+              {inviting ? "جاري..." : "إنشاء الحساب"}
             </button>
           </div>
         </div>
       )}
 
-      {/* Current owner */}
+      {/* Owner card */}
       <div className="rounded-2xl bg-gradient-to-l from-gold/10 to-white p-5 border border-gold/20">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="rounded-xl bg-gold/20 p-2.5"><ShieldCheck className="size-5 text-gold-dark" /></div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-navy">المالك (أنت)</p>
             <p className="text-xs text-gray-400" dir="ltr">{user?.email}</p>
           </div>
-          <span className="rounded-lg bg-gold/20 px-3 py-1 text-xs font-bold text-gold-dark ms-auto">مشرف عام</span>
+          <Link to={`/user-activity/${encodeURIComponent(user?.email || "")}`}
+            className="flex items-center gap-1.5 rounded-lg bg-navy/10 px-3 py-1.5 text-xs font-bold text-navy hover:bg-navy hover:text-white transition-colors">
+            <Activity className="size-3.5" /> نشاطي
+          </Link>
+          <span className="rounded-lg bg-gold/20 px-3 py-1 text-xs font-bold text-gold-dark">مشرف عام</span>
         </div>
       </div>
 
-      {/* Loading */}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-6 animate-spin text-navy" />
         </div>
       )}
 
-      {/* Assigned roles */}
+      {/* Assigned roles with activity */}
       <div className="space-y-3">
         {roles.length === 0 && !loading ? (
           <div className="flex flex-col items-center gap-4 py-16">
             <div className="rounded-full bg-gray-100 p-6"><Users className="size-10 text-gray-300" /></div>
             <h3 className="text-lg font-bold text-navy">لا توجد حسابات مضافة</h3>
-            <p className="text-sm text-gray-400">أنت المشرف الوحيد حالياً — أنشئ حسابات للموظفين</p>
+            <p className="text-sm text-gray-400">أنت المشرف الوحيد — أنشئ حسابات للموظفين</p>
           </div>
         ) : (
           roles.map((r, idx) => {
             const config = ROLE_CONFIG[r.role] || FALLBACK_CONFIG;
             const Icon = config.icon;
+            const activity = activityCounts[r.assignedUserEmail];
             return (
               <div key={r.id}
                 className={`rounded-2xl bg-white p-5 border shadow-sm transition-all animate-fade-in opacity-0 ${r.isActive ? "border-gray-100" : "border-gray-200 opacity-60"}`}
                 style={{ animationDelay: `${idx * 60}ms` }}>
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
-                    <div className={`rounded-xl p-2.5 ${config.color}`}>
-                      <Icon className="size-5" />
-                    </div>
+                    <div className={`rounded-xl p-2.5 ${config.color}`}><Icon className="size-5" /></div>
                     <div>
                       <p className="text-sm font-bold text-navy" dir="ltr">{r.assignedUserEmail}</p>
-                      <p className="text-xs text-gray-400">{config.label} · {r.isActive ? "نشط" : "معطل"}</p>
+                      <p className="text-xs text-gray-400">
+                        {config.label} · {r.isActive ? "نشط" : "معطل"}
+                        {activity && (
+                          <>
+                            <span className="mx-1.5">·</span>
+                            <span className="text-emerald-600 font-semibold">{activity.total} نشاط</span>
+                            {activity.lastActivity && (
+                              <span className="ms-1.5 text-[10px]">
+                                (آخر: {new Date(activity.lastActivity).toLocaleDateString("ar-SA", { month: "short", day: "numeric" })})
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Link to={`/user-activity/${encodeURIComponent(r.assignedUserEmail)}`}
+                      className="flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors">
+                      <Activity className="size-3.5" /> عرض النشاط
+                    </Link>
                     <button onClick={() => handleToggleActive(r.id)}
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${r.isActive ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        r.isActive ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}>
                       {r.isActive ? "تعطيل" : "تفعيل"}
                     </button>
                     <button onClick={() => handleDeleteRole(r.id, r.assignedUserEmail)}

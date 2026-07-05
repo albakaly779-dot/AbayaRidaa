@@ -29,6 +29,10 @@ import RepActivity from "@/pages/RepActivity";
 import Receipts from "@/pages/Receipts";
 import PhoneValidator from "@/pages/PhoneValidator";
 import ProductProfitability from "@/pages/ProductProfitability";
+import InvoicePreview from "@/pages/InvoicePreview";
+import ChangePassword from "@/pages/ChangePassword";
+import UserActivity from "@/pages/UserActivity";
+import BulkImportUsers from "@/pages/BulkImportUsers";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -52,14 +56,23 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PasswordChangeGuard({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (user?.mustChangePassword && window.location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <Toaster position="top-center" richColors dir="rtl" />
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/rep-dashboard" element={<ProtectedRoute><RepDashboard /></ProtectedRoute>} />
-        <Route path="/" element={<ProtectedRoute><AdminRoute><AppLayout /></AdminRoute></ProtectedRoute>}>
+        <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
+        <Route path="/rep-dashboard" element={<ProtectedRoute><PasswordChangeGuard><RepDashboard /></PasswordChangeGuard></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><PasswordChangeGuard><AdminRoute><AppLayout /></AdminRoute></PasswordChangeGuard></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="orders" element={<Orders />} />
@@ -78,6 +91,9 @@ export default function App() {
           <Route path="invoice/:orderId" element={<Invoice />} />
           <Route path="reports" element={<Reports />} />
           <Route path="product-profitability" element={<ProductProfitability />} />
+          <Route path="invoice-preview" element={<InvoicePreview />} />
+          <Route path="user-activity/:email" element={<UserActivity />} />
+          <Route path="bulk-import-users" element={<BulkImportUsers />} />
           <Route path="rules" element={<Rules />} />
           <Route path="export" element={<ExportPage />} />
           <Route path="import" element={<Import />} />

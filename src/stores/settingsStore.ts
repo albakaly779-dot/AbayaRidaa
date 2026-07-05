@@ -10,6 +10,7 @@ export interface FixedExpense {
 
 export type InvoiceTemplate = "modern" | "classic" | "minimal";
 export type InvoicePageSize = "A4" | "A5" | "thermal80" | "thermal58";
+export type SmtpProvider = "custom" | "gmail" | "zoho" | "sendgrid" | "mailgun" | "outlook";
 
 export interface AppSettings {
   // Business info
@@ -32,6 +33,17 @@ export interface AppSettings {
   invoiceShowSignature: boolean;
   invoiceCopyLabel: string;
 
+  // SMTP settings for email delivery
+  smtpEnabled: boolean;
+  smtpProvider: SmtpProvider;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPassword: string;
+  smtpFromEmail: string;
+  smtpFromName: string;
+  smtpUseTls: boolean;
+
   // Feature toggles
   featureWhatsapp: boolean;
   featureSmsAlerts: boolean;
@@ -43,6 +55,15 @@ export interface AppSettings {
 
   fixedExpenses: FixedExpense[];
 }
+
+export const SMTP_PRESETS: Record<SmtpProvider, { host: string; port: number; useTls: boolean; label: string; note: string }> = {
+  custom: { host: "", port: 587, useTls: true, label: "مخصص", note: "أدخل بيانات SMTP يدوياً" },
+  gmail: { host: "smtp.gmail.com", port: 587, useTls: true, label: "Gmail", note: "استخدم App Password (كلمة مرور التطبيق) من إعدادات Google" },
+  outlook: { host: "smtp-mail.outlook.com", port: 587, useTls: true, label: "Outlook", note: "استخدم كلمة مرور حسابك" },
+  zoho: { host: "smtp.zoho.com", port: 465, useTls: true, label: "Zoho", note: "استخدم App Password من إعدادات الأمان" },
+  sendgrid: { host: "smtp.sendgrid.net", port: 587, useTls: true, label: "SendGrid", note: "اسم المستخدم = 'apikey' وكلمة المرور = مفتاح API" },
+  mailgun: { host: "smtp.mailgun.org", port: 587, useTls: true, label: "Mailgun", note: "استخدم بيانات SMTP من لوحة Mailgun" },
+};
 
 const DEFAULT_FIXED_EXPENSES: FixedExpense[] = [
   { key: "salaries", label: "رواتب الموظفين", amount: 250000 },
@@ -68,6 +89,15 @@ const DEFAULT_SETTINGS: AppSettings = {
   invoicePageSize: "A4",
   invoiceShowSignature: true,
   invoiceCopyLabel: "نسخة العميل",
+  smtpEnabled: false,
+  smtpProvider: "custom",
+  smtpHost: "",
+  smtpPort: 587,
+  smtpUser: "",
+  smtpPassword: "",
+  smtpFromEmail: "",
+  smtpFromName: "رداء",
+  smtpUseTls: true,
   featureWhatsapp: true,
   featureSmsAlerts: true,
   featureStockAlerts: true,

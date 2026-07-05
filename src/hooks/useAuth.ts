@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { mapSupabaseUser, detectUserRole, ALLOWED_EMAIL } from "@/lib/auth";
+import { logActivity } from "@/hooks/useActivityLogger";
 import type { AuthUser, UserRole } from "@/lib/auth";
 
 interface AuthState {
@@ -58,7 +59,15 @@ export function useAuth(): AuthState {
           globalRole = role;
           globalLoading = false;
           notify();
+          // Log login activity (fire-and-forget)
+          logActivity(mapped.email, mapped.id, "login", `تسجيل دخول (${role === "admin" ? "مدير عام" : role === "rep" ? "مندوب" : role})`, {
+            details: `دخول ناجح من ${typeof window !== "undefined" ? window.location.origin : ""}`,
+          }).catch(() => { /* silent */ });
         } else if (event === "SIGNED_OUT") {
+          // Log logout before clearing state
+          if (globalUser) {
+            logActivity(globalUser.email, globalUser.id, "logout", "تسجيل خروج", {}).catch(() => { /* silent */ });
+          }
           globalUser = null;
           globalRole = "admin";
           globalLoading = false;
