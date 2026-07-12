@@ -6,7 +6,7 @@ export const ALLOWED_EMAIL = "albakaly779@gmail.com";
 export const OWNER_PHONE = "+967779673273";
 export const OWNER_NAME = "رداء";
 
-export type UserRole = "admin" | "rep" | "support" | "operations";
+export type UserRole = "admin" | "rep" | "support" | "operations" | "partner";
 
 export interface AuthUser {
   id: string;
@@ -33,6 +33,14 @@ export function mapSupabaseUser(user: User): AuthUser {
 export async function detectUserRole(email: string): Promise<UserRole> {
   if (email === ALLOWED_EMAIL) return "admin";
   
+  // Check partners_config for partner role
+  const { data: partnerData } = await supabase.from("partners_config")
+    .select("id")
+    .eq("partner_email", email)
+    .eq("is_active", true)
+    .limit(1);
+  if (partnerData && partnerData.length > 0) return "partner";
+
   // Check user_roles table for assigned role
   const { data } = await supabase.from("user_roles")
     .select("role")

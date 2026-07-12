@@ -33,6 +33,14 @@ import InvoicePreview from "@/pages/InvoicePreview";
 import ChangePassword from "@/pages/ChangePassword";
 import UserActivity from "@/pages/UserActivity";
 import BulkImportUsers from "@/pages/BulkImportUsers";
+import Partners from "@/pages/Partners";
+import PartnerDashboard from "@/pages/PartnerDashboard";
+import ReportsAutomation from "@/pages/ReportsAutomation";
+import ExecutiveDashboard from "@/pages/ExecutiveDashboard";
+import ActivityAnalytics from "@/pages/ActivityAnalytics";
+import InvoiceTemplatesCustom from "@/pages/InvoiceTemplatesCustom";
+import RepPricing from "@/pages/RepPricing";
+import EmailTemplates from "@/pages/EmailTemplates";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -53,6 +61,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { role } = useAuth();
   if (role === "rep") return <Navigate to="/rep-dashboard" replace />;
+  if (role === "partner") return <Navigate to="/partner-dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -75,6 +84,8 @@ export default function App() {
         <Route path="/" element={<ProtectedRoute><PasswordChangeGuard><AdminRoute><AppLayout /></AdminRoute></PasswordChangeGuard></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="executive-dashboard" element={<ExecutiveDashboard />} />
+          <Route path="partner-dashboard" element={<PartnerDashboard />} />
           <Route path="orders" element={<Orders />} />
           <Route path="customers" element={<Customers />} />
           <Route path="customers/:id" element={<CustomerProfile />} />
@@ -87,11 +98,17 @@ export default function App() {
           <Route path="reps" element={<Reps />} />
           <Route path="rep-performance" element={<RepPerformance />} />
           <Route path="rep-activity/:repId" element={<RepActivity />} />
+          <Route path="rep-pricing" element={<RepPricing />} />
           <Route path="receipts" element={<Receipts />} />
           <Route path="invoice/:orderId" element={<Invoice />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="reports-automation" element={<ReportsAutomation />} />
           <Route path="product-profitability" element={<ProductProfitability />} />
           <Route path="invoice-preview" element={<InvoicePreview />} />
+          <Route path="invoice-templates" element={<InvoiceTemplatesCustom />} />
+          <Route path="partners" element={<Partners />} />
+          <Route path="activity-analytics" element={<ActivityAnalytics />} />
+          <Route path="email-templates" element={<EmailTemplates />} />
           <Route path="user-activity/:email" element={<UserActivity />} />
           <Route path="bulk-import-users" element={<BulkImportUsers />} />
           <Route path="rules" element={<Rules />} />

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus, Trash2, Users, ShieldCheck, Eye, Settings,
-  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus, Activity, FileSpreadsheet, MailCheck,
+  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus, Activity, FileSpreadsheet, MailCheck, CheckSquare, Square, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -95,6 +95,8 @@ export default function Roles() {
   const [sendViaSmtp, setSendViaSmtp] = useState(false);
   const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string; emailSent?: boolean; emailError?: string } | null>(null);
   const [activityCounts, setActivityCounts] = useState<Record<string, { total: number; lastActivity?: string }>>({});
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkRole, setBulkRole] = useState<RoleKey>("support");
 
   useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
 
@@ -239,6 +241,51 @@ export default function Roles() {
     if (!credentials) return;
     const message = `مرحباً ${credentials.name} 👋\n\nحسابك في نظام رداء:\n📧 ${credentials.email}\n🔑 ${credentials.password}\n🎭 ${credentials.role}\n\n⚠️ غيّر كلمة المرور بعد أول دخول.\n\nرداء 🌸`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const cp = new Set(prev);
+      if (cp.has(id)) cp.delete(id); else cp.add(id);
+      return cp;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === roles.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(roles.map((r) => r.id)));
+  };
+
+  const handleBulkActivate = async (active: boolean) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    await supabase.from("user_roles").update({ is_active: active }).in("id", ids);
+    setRoles((prev) => prev.map((r) => selectedIds.has(r.id) ? { ...r, isActive: active } : r));
+    if (user?.id) logAction(user.id, active ? "status_change" : "status_change", "role", undefined, `${active ? "تفعيل" : "تعطيل"} جماعي: ${ids.length} حساب`);
+    toast.success(`تم ${active ? "تفعيل" : "تعطيل"} ${ids.length} حساب`);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`حذف ${selectedIds.size} حساب مختار؟ لا يمكن التراجع.`)) return;
+    const ids = Array.from(selectedIds);
+    await supabase.from("user_roles").delete().in("id", ids);
+    setRoles((prev) => prev.filter((r) => !selectedIds.has(r.id)));
+    if (user?.id) logAction(user.id, "delete", "role", undefined, `حذف جماعي: ${ids.length} حساب`);
+    toast.success(`تم حذف ${ids.length} حساب`);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkChangeRole = async () => {
+    if (selectedIds.size === 0) return;
+    const config = ROLE_CONFIG[bulkRole] || FALLBACK_CONFIG;
+    const ids = Array.from(selectedIds);
+    await supabase.from("user_roles").update({ role: bulkRole, permissions: JSON.stringify(config.permissions) }).in("id", ids);
+    setRoles((prev) => prev.map((r) => selectedIds.has(r.id) ? { ...r, role: bulkRole, permissions: JSON.stringify(config.permissions) } : r));
+    if (user?.id) logAction(user.id, "update", "role", undefined, `تغيير جماعي للدور إلى ${config.label}: ${ids.length} حساب`);
+    toast.success(`تم تغيير دور ${ids.length} حساب إلى ${config.label}`);
+    setSelectedIds(new Set());
   };
 
   return (
@@ -440,6 +487,58 @@ export default function Roles() {
         </div>
       )}
 
+      {/* Bulk action toolbar */}
+      {roles.length > 0 && (
+        <div className={`sticky top-0 z-10 rounded-2xl border-2 p-3 transition-all ${
+          selectedIds.size > 0 ? "bg-navy border-navy text-white shadow-lg" : "bg-white border-gray-100"
+        }`}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={toggleSelectAll}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                selectedIds.size === roles.length ? "bg-emerald-500 text-white"
+                : selectedIds.size > 0 ? "bg-white/20 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}>
+              {selectedIds.size === roles.length ? <CheckSquare className="size-3.5" /> : <Square className="size-3.5" />}
+              {selectedIds.size === roles.length ? "إلغاء التحديد" : "تحديد الكل"}
+            </button>
+            {selectedIds.size > 0 ? (
+              <>
+                <span className="text-xs font-bold">{selectedIds.size} محدد</span>
+                <div className="h-4 w-px bg-white/30" />
+                <button onClick={() => handleBulkActivate(true)}
+                  className="flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600">
+                  <CheckCircle2 className="size-3.5" /> تفعيل
+                </button>
+                <button onClick={() => handleBulkActivate(false)}
+                  className="flex items-center gap-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600">
+                  <X className="size-3.5" /> تعطيل
+                </button>
+                <div className="flex items-center gap-1">
+                  <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value as RoleKey)}
+                    className="rounded-lg bg-white text-navy px-2 py-1.5 text-xs font-bold border-0">
+                    <option value="super_admin">مشرف عام</option>
+                    <option value="operations_manager">مدير عمليات</option>
+                    <option value="support">دعم فني</option>
+                    <option value="rep">مندوب</option>
+                  </select>
+                  <button onClick={handleBulkChangeRole}
+                    className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600">
+                    تغيير الدور
+                  </button>
+                </div>
+                <button onClick={handleBulkDelete}
+                  className="flex items-center gap-1 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-600 ms-auto">
+                  <Trash2 className="size-3.5" /> حذف
+                </button>
+              </>
+            ) : (
+              <span className="text-xs text-gray-500">حدد حسابات لإجراء إجراءات جماعية عليها</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Assigned roles with activity */}
       <div className="space-y-3">
         {roles.length === 0 && !loading ? (
@@ -453,12 +552,16 @@ export default function Roles() {
             const config = ROLE_CONFIG[r.role] || FALLBACK_CONFIG;
             const Icon = config.icon;
             const activity = activityCounts[r.assignedUserEmail];
+            const isSelected = selectedIds.has(r.id);
             return (
               <div key={r.id}
-                className={`rounded-2xl bg-white p-5 border shadow-sm transition-all animate-fade-in opacity-0 ${r.isActive ? "border-gray-100" : "border-gray-200 opacity-60"}`}
+                className={`rounded-2xl bg-white p-5 border shadow-sm transition-all animate-fade-in opacity-0 ${isSelected ? "border-navy ring-2 ring-navy/20" : r.isActive ? "border-gray-100" : "border-gray-200 opacity-60"}`}
                 style={{ animationDelay: `${idx * 60}ms` }}>
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
+                    <button onClick={() => toggleSelect(r.id)} className={`rounded p-1 transition-colors ${isSelected ? "bg-navy text-white" : "bg-gray-100 hover:bg-gray-200 text-gray-500"}`}>
+                      {isSelected ? <CheckSquare className="size-4" /> : <Square className="size-4" />}
+                    </button>
                     <div className={`rounded-xl p-2.5 ${config.color}`}><Icon className="size-5" /></div>
                     <div>
                       <p className="text-sm font-bold text-navy" dir="ltr">{r.assignedUserEmail}</p>

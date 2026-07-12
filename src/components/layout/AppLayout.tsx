@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
-import { Menu, AlertTriangle } from "lucide-react";
+import { Menu, AlertTriangle, Search, Command } from "lucide-react";
 import { Link } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import BottomNav from "./BottomNav";
+import GlobalSearch from "@/components/features/GlobalSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { usePageVisitLogger } from "@/hooks/useActivityLogger";
@@ -11,6 +12,7 @@ import brandLogo from "@/assets/brand-logo.png";
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { user } = useAuth();
   const { settings, initializeSettings } = useSettingsStore();
 
@@ -21,6 +23,19 @@ export default function AppLayout() {
   useEffect(() => {
     if (user?.id) initializeSettings(user.id);
   }, [user?.id, initializeSettings]);
+
+  // Global search keyboard shortcut (Ctrl/Cmd + K)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+      if (e.key === "Escape") setSearchOpen(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const displayLogo = settings.logoUrl || brandLogo;
   const displayName = settings.businessName || "رداء";
@@ -36,8 +51,26 @@ export default function AppLayout() {
             <Menu className="size-5" />
           </button>
           <img src={displayLogo} alt={displayName} className="size-7 rounded-lg object-cover" />
-          <h1 className="font-kufi text-sm font-bold text-navy">{displayName}</h1>
+          <h1 className="font-kufi text-sm font-bold text-navy flex-1">{displayName}</h1>
+          <button onClick={() => setSearchOpen(true)} className="rounded-lg p-2 hover:bg-gray-100 transition-all" aria-label="بحث">
+            <Search className="size-4" />
+          </button>
         </header>
+
+        {/* Desktop search bar (top of content) */}
+        <div className="hidden lg:flex sticky top-0 z-20 items-center justify-end gap-3 border-b bg-white/80 px-8 py-2.5 backdrop-blur-md">
+          <button onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs text-gray-500 hover:border-gold hover:text-navy transition-colors min-w-[300px] justify-between">
+            <span className="flex items-center gap-2">
+              <Search className="size-3.5" /> ابحث في كل شيء...
+            </span>
+            <span className="flex items-center gap-1 text-[10px] border border-gray-200 rounded-md px-1.5 py-0.5">
+              <Command className="size-2.5" /> K
+            </span>
+          </button>
+        </div>
+
+        {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} />}
 
         {/* Password change banner if required */}
         {user?.mustChangePassword && (

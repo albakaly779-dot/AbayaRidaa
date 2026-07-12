@@ -3,6 +3,7 @@ import {
   LayoutDashboard, ShoppingBag, Users, Package, AlertTriangle,
   Truck, RotateCcw, Receipt, UserCheck, FileText, Bell, Download,
   Settings, LogOut, X, ClipboardList, Upload, Zap, Shield, Image, BarChart3, PhoneCall, KeyRound,
+  PieChart, FileSpreadsheet, Sparkles, Activity, FileImage, Mail, DollarSign,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -13,29 +14,43 @@ interface NavItem {
   label: string;
   icon: typeof LayoutDashboard;
   roles?: string[];
+  section?: string;
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
-  { path: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
-  { path: "/orders", label: "الطلبات", icon: ShoppingBag, roles: ["admin", "operations"] },
-  { path: "/customers", label: "العملاء", icon: Users },
-  { path: "/phone-validator", label: "فحص الأرقام", icon: PhoneCall, roles: ["admin"] },
-  { path: "/products", label: "المنتجات والمخزون", icon: Package, roles: ["admin", "operations"] },
-  { path: "/debts", label: "المديونيات", icon: AlertTriangle, roles: ["admin"] },
-  { path: "/suppliers", label: "الموردون", icon: Truck, roles: ["admin"] },
-  { path: "/returns", label: "المرتجعات", icon: RotateCcw, roles: ["admin", "operations"] },
-  { path: "/expenses", label: "المصروفات", icon: Receipt, roles: ["admin"] },
-  { path: "/reps", label: "المناديب", icon: UserCheck, roles: ["admin"] },
-  { path: "/rep-performance", label: "أداء المناديب", icon: BarChart3, roles: ["admin"] },
-  { path: "/receipts", label: "معرض الإيصالات", icon: Image, roles: ["admin"] },
-  { path: "/reports", label: "التقارير", icon: FileText, roles: ["admin"] },
-  { path: "/rules", label: "محرك القواعد", icon: Zap, roles: ["admin"] },
-  { path: "/notifications", label: "الإشعارات", icon: Bell },
-  { path: "/export", label: "التصدير", icon: Download, roles: ["admin"] },
-  { path: "/import", label: "استيراد البيانات", icon: Upload, roles: ["admin"] },
-  { path: "/roles", label: "الصلاحيات", icon: Shield, roles: ["admin"] },
-  { path: "/audit", label: "سجل الأحداث", icon: ClipboardList, roles: ["admin"] },
-  { path: "/settings", label: "الإعدادات", icon: Settings, roles: ["admin"] },
+  // Dashboards
+  { path: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard, section: "لوحات" },
+  { path: "/executive-dashboard", label: "اللوحة التنفيذية", icon: Sparkles, roles: ["admin"], section: "لوحات" },
+  { path: "/partner-dashboard", label: "لوحة الشريك", icon: PieChart, roles: ["admin"], section: "لوحات" },
+  // Operations
+  { path: "/orders", label: "الطلبات", icon: ShoppingBag, roles: ["admin", "operations"], section: "العمليات" },
+  { path: "/customers", label: "العملاء", icon: Users, section: "العمليات" },
+  { path: "/phone-validator", label: "فحص الأرقام", icon: PhoneCall, roles: ["admin"], section: "العمليات" },
+  { path: "/products", label: "المنتجات والمخزون", icon: Package, roles: ["admin", "operations"], section: "العمليات" },
+  { path: "/debts", label: "المديونيات", icon: AlertTriangle, roles: ["admin"], section: "العمليات" },
+  { path: "/suppliers", label: "الموردون", icon: Truck, roles: ["admin"], section: "العمليات" },
+  { path: "/returns", label: "المرتجعات", icon: RotateCcw, roles: ["admin", "operations"], section: "العمليات" },
+  { path: "/expenses", label: "المصروفات", icon: Receipt, roles: ["admin"], section: "العمليات" },
+  // Team
+  { path: "/reps", label: "المناديب", icon: UserCheck, roles: ["admin"], section: "الفريق" },
+  { path: "/rep-performance", label: "أداء المناديب", icon: BarChart3, roles: ["admin"], section: "الفريق" },
+  { path: "/rep-pricing", label: "تسعير المناديب", icon: DollarSign, roles: ["admin"], section: "الفريق" },
+  { path: "/receipts", label: "معرض الإيصالات", icon: Image, roles: ["admin"], section: "الفريق" },
+  { path: "/partners", label: "الشركاء", icon: PieChart, roles: ["admin"], section: "الفريق" },
+  // Reports
+  { path: "/reports", label: "التقارير", icon: FileText, roles: ["admin"], section: "التقارير" },
+  { path: "/reports-automation", label: "تقارير Excel", icon: FileSpreadsheet, roles: ["admin"], section: "التقارير" },
+  { path: "/activity-analytics", label: "تحليلات النشاط", icon: Activity, roles: ["admin"], section: "التقارير" },
+  { path: "/rules", label: "محرك القواعد", icon: Zap, roles: ["admin"], section: "التقارير" },
+  // System
+  { path: "/notifications", label: "الإشعارات", icon: Bell, section: "النظام" },
+  { path: "/export", label: "التصدير", icon: Download, roles: ["admin"], section: "النظام" },
+  { path: "/import", label: "استيراد البيانات", icon: Upload, roles: ["admin"], section: "النظام" },
+  { path: "/roles", label: "الصلاحيات", icon: Shield, roles: ["admin"], section: "النظام" },
+  { path: "/audit", label: "سجل الأحداث", icon: ClipboardList, roles: ["admin"], section: "النظام" },
+  { path: "/invoice-templates", label: "قوالب الفواتير", icon: FileImage, roles: ["admin"], section: "النظام" },
+  { path: "/email-templates", label: "قوالب البريد", icon: Mail, roles: ["admin"], section: "النظام" },
+  { path: "/settings", label: "الإعدادات", icon: Settings, roles: ["admin"], section: "النظام" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -63,9 +78,15 @@ export default function Sidebar({ mobileOpen, onClose }: Props) {
     return item.roles.includes(role);
   });
 
-  const handleLogout = async () => {
-    await logout();
-  };
+  // Group by section
+  const grouped: Record<string, NavItem[]> = {};
+  navItems.forEach((item) => {
+    const sec = item.section || "أخرى";
+    if (!grouped[sec]) grouped[sec] = [];
+    grouped[sec].push(item);
+  });
+
+  const handleLogout = async () => { await logout(); };
 
   return (
     <>
@@ -87,17 +108,24 @@ export default function Sidebar({ mobileOpen, onClose }: Props) {
           </button>
         </div>
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-0.5 scrollbar-thin">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path || (item.path !== "/dashboard" && location.pathname.startsWith(item.path));
-            return (
-              <Link key={item.path} to={item.path} onClick={onClose}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${isActive ? "bg-gold/20 text-gold-light" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
-                <item.icon className="size-[18px] shrink-0" />
-                <span className="truncate">{item.label}</span>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
+          {Object.entries(grouped).map(([section, items]) => (
+            <div key={section}>
+              <p className="text-[9px] font-bold text-white/40 px-3 mb-1 uppercase tracking-wider">{section}</p>
+              <div className="space-y-0.5">
+                {items.map((item) => {
+                  const isActive = location.pathname === item.path || (item.path !== "/dashboard" && location.pathname.startsWith(item.path));
+                  return (
+                    <Link key={item.path} to={item.path} onClick={onClose}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${isActive ? "bg-gold/20 text-gold-light" : "text-white/70 hover:bg-white/5 hover:text-white"}`}>
+                      <item.icon className="size-4 shrink-0" />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         <div className="border-t border-white/10 p-3 space-y-2">
@@ -113,12 +141,12 @@ export default function Sidebar({ mobileOpen, onClose }: Props) {
             </div>
           )}
           <Link to="/change-password" onClick={onClose}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-white/70 hover:bg-white/5 hover:text-white transition-colors">
-            <KeyRound className="size-[18px]" /> تغيير كلمة المرور
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-white/70 hover:bg-white/5 hover:text-white transition-colors">
+            <KeyRound className="size-4" /> تغيير كلمة المرور
           </Link>
           <button onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-400 hover:bg-red-500/10 transition-colors">
-            <LogOut className="size-[18px]" /> تسجيل الخروج
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors">
+            <LogOut className="size-4" /> تسجيل الخروج
           </button>
         </div>
       </aside>
