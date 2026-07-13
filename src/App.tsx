@@ -41,6 +41,9 @@ import ActivityAnalytics from "@/pages/ActivityAnalytics";
 import InvoiceTemplatesCustom from "@/pages/InvoiceTemplatesCustom";
 import RepPricing from "@/pages/RepPricing";
 import EmailTemplates from "@/pages/EmailTemplates";
+import Approvals from "@/pages/Approvals";
+import Sessions from "@/pages/Sessions";
+import SmartBackups from "@/pages/SmartBackups";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -109,6 +112,9 @@ export default function App() {
           <Route path="partners" element={<Partners />} />
           <Route path="activity-analytics" element={<ActivityAnalytics />} />
           <Route path="email-templates" element={<EmailTemplates />} />
+          <Route path="approvals" element={<Approvals />} />
+          <Route path="sessions" element={<Sessions />} />
+          <Route path="smart-backups" element={<SmartBackups />} />
           <Route path="user-activity/:email" element={<UserActivity />} />
           <Route path="bulk-import-users" element={<BulkImportUsers />} />
           <Route path="rules" element={<Rules />} />

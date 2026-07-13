@@ -4,6 +4,7 @@ import {
   Truck, RotateCcw, Receipt, UserCheck, FileText, Bell, Download,
   Settings, LogOut, X, ClipboardList, Upload, Zap, Shield, Image, BarChart3, PhoneCall, KeyRound,
   PieChart, FileSpreadsheet, Sparkles, Activity, FileImage, Mail, DollarSign,
+  ShieldCheck, HardDrive, MonitorSmartphone,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
@@ -50,6 +51,9 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { path: "/audit", label: "سجل الأحداث", icon: ClipboardList, roles: ["admin"], section: "النظام" },
   { path: "/invoice-templates", label: "قوالب الفواتير", icon: FileImage, roles: ["admin"], section: "النظام" },
   { path: "/email-templates", label: "قوالب البريد", icon: Mail, roles: ["admin"], section: "النظام" },
+  { path: "/approvals", label: "نظام الموافقات", icon: ShieldCheck, roles: ["admin", "operations"], section: "النظام" },
+  { path: "/sessions", label: "إدارة الجلسات", icon: MonitorSmartphone, section: "النظام" },
+  { path: "/smart-backups", label: "النسخ الاحتياطي", icon: HardDrive, roles: ["admin"], section: "النظام" },
   { path: "/settings", label: "الإعدادات", icon: Settings, roles: ["admin"], section: "النظام" },
 ];
 
