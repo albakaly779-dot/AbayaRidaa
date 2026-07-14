@@ -23,7 +23,7 @@ export const useNotificationStore = create<NotificationState>()((set, get) => ({
   initializeData: async (userId: string) => {
     if (get().initialized) return;
     const { data } = await supabase.from("notifications").select("*").eq("user_id", userId).order("sent_at", { ascending: false }).limit(200);
-    const notifications = (data || []).map((n: any) => ({
+    const notifications = (data || []).map((n: SMSNotification) => ({
       id: n.id, type: n.type, recipientName: n.recipient_name, recipientPhone: n.recipient_phone,
       message: n.message, status: n.status, orderId: n.order_id, sentAt: n.sent_at,
     }));

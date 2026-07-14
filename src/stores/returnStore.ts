@@ -29,12 +29,12 @@ export const useReturnStore = create<ReturnState>()((set, get) => ({
       supabase.from("return_items").select("*"),
     ]);
     const itemsByReturn = new Map<string, any[]>();
-    (itemsRes.data || []).forEach((item: any) => {
+    (itemsRes.data || []).forEach((item: ReturnItem) => {
       const list = itemsByReturn.get(item.return_id) || [];
       list.push({ id: item.id, productCode: item.product_code, productName: item.product_name, quantity: item.quantity, unitPrice: Number(item.unit_price), total: Number(item.total) });
       itemsByReturn.set(item.return_id, list);
     });
-    const returns = (retRes.data || []).map((r: any) => ({
+    const returns = (retRes.data || []).map((r: Return) => ({
       id: r.id, type: r.type, orderId: r.order_id, orderNumber: r.order_number,
       customerId: r.customer_id, customerName: r.customer_name,
       supplierId: r.supplier_id, supplierName: r.supplier_name,

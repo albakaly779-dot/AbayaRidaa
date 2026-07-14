@@ -42,17 +42,17 @@ export const useDataStore = create<DataState>()((set, get) => ({
         supabase.from("payments").select("*").eq("user_id", userId).order("date", { ascending: false }),
       ]);
 
-      const customers = (custRes.data || []).map((c: any) => ({
+      const customers = (custRes.data || []).map((c: Customer) => ({
         id: c.id, name: c.name, phone: c.phone, email: c.email, city: c.city,
         address: c.address, notes: c.notes, createdAt: c.created_at?.split("T")[0] || "",
         source: c.source || "", addedById: c.added_by_id || "", addedByName: c.added_by_name || "",
       }));
 
-      const orders = (ordRes.data || []).map((o: any) => ({
+      const orders = (ordRes.data || []).map((o: Order) => ({
         id: o.id, orderNumber: o.order_number, customerId: o.customer_id,
         customerName: o.customer_name, customerPhone: o.customer_phone,
         status: o.status, paymentStatus: o.payment_status,
-        items: (o.order_items || []).map((i: any) => ({
+        items: (o.order_items || []).map((i: OrderItem) => ({
           id: i.id, productCode: i.product_code, productName: i.product_name,
           quantity: i.quantity, unitPrice: i.unit_price, buyPrice: i.buy_price, total: i.total,
         })),
@@ -62,7 +62,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
         createdAt: o.created_at?.split("T")[0] || "",
       }));
 
-      const payments = (payRes.data || []).map((p: any) => ({
+      const payments = (payRes.data || []).map((p: Payment) => ({
         id: p.id, orderId: p.order_id, customerId: p.customer_id,
         customerName: p.customer_name, amount: Number(p.amount),
         method: p.method, date: p.date, notes: p.notes,
@@ -89,7 +89,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   updateCustomer: async (id, data) => {
-    const payload: any = {};
+    const payload: Partial<Customer> = {};
     if (data.name !== undefined) payload.name = data.name;
     if (data.phone !== undefined) payload.phone = data.phone;
     if (data.city !== undefined) payload.city = data.city;
@@ -146,7 +146,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   updateOrder: async (id, data) => {
-    const payload: any = {};
+    const payload: Partial<Order> = {};
     if (data.status) payload.status = data.status;
     if (data.paymentStatus) payload.payment_status = data.paymentStatus;
     if (data.paid !== undefined) payload.paid = data.paid;

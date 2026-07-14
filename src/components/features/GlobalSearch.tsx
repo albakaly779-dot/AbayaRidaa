@@ -42,7 +42,7 @@ export default function GlobalSearch({ onClose }: Props) {
       });
     }
     inputRef.current?.focus();
-  }, [user?.id]);
+  }, [user?.id, initializeData, initSup, initReps]);
 
   const results = useMemo<SearchResult[]>(() => {
     const q = query.trim().toLowerCase();

@@ -133,16 +133,16 @@ function applyValue(merged: AppSettings, key: string, val: string): void {
   if (Array.isArray(defaultVal)) {
     try {
       const parsed = JSON.parse(val);
-      if (Array.isArray(parsed)) (merged as Record<string, unknown>)[k] = parsed;
+      if (Array.isArray(parsed)) (merged as Record<string, unknown>)[k] = parsed as AppSettings[keyof AppSettings];
     } catch {
       /* keep default */
     }
   } else if (typeof defaultVal === "number") {
-    (merged as Record<string, unknown>)[k] = parseFloat(val) || defaultVal;
+    (merged as Record<string, unknown>)[k] = parseFloat(val) || defaultVal as AppSettings[keyof AppSettings];
   } else if (typeof defaultVal === "boolean") {
-    (merged as Record<string, unknown>)[k] = val === "true";
+    (merged as Record<string, unknown>)[k] = val === "true" as AppSettings[keyof AppSettings];
   } else {
-    (merged as Record<string, unknown>)[k] = val;
+    (merged as Record<string, unknown>)[k] = val as AppSettings[keyof AppSettings];
   }
 }
 

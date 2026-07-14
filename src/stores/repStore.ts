@@ -35,11 +35,11 @@ export const useRepStore = create<RepState>()((set, get) => ({
       supabase.from("sales_reps").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
       supabase.from("rep_commissions").select("*").order("date", { ascending: false }),
     ]);
-    const reps = (repRes.data || []).map((r: any) => ({
+    const reps = (repRes.data || []).map((r: SalesRep) => ({
       id: r.id, name: r.name, phone: r.phone, email: r.email, city: r.city,
       commissionRate: Number(r.commission_rate), notes: r.notes, isActive: r.is_active, createdAt: r.created_at?.split("T")[0] || "",
     }));
-    const commissions = (comRes.data || []).map((c: any) => ({
+    const commissions = (comRes.data || []).map((c: RepCommission) => ({
       id: c.id, repId: c.rep_id, repName: c.rep_name, orderId: c.order_id, orderNumber: c.order_number,
       orderTotal: Number(c.order_total), commissionAmount: Number(c.commission_amount),
       shippingDeduction: Number(c.shipping_deduction), netCommission: Number(c.net_commission),
@@ -58,7 +58,7 @@ export const useRepStore = create<RepState>()((set, get) => ({
   },
 
   updateRep: async (id, data) => {
-    const payload: any = {};
+    const payload: Partial<SalesRep> = {};
     if (data.name) payload.name = data.name;
     if (data.isActive !== undefined) payload.is_active = data.isActive;
     if (data.commissionRate !== undefined) payload.commission_rate = data.commissionRate;

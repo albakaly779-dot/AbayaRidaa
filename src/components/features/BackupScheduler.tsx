@@ -105,7 +105,7 @@ export default function BackupScheduler({ compact }: { compact?: boolean } = {})
         { duration: 8000 }
       );
     }
-  }, []);
+  }, [daysSince, orders.length, schedule]);
 
   if (compact) {
     return (

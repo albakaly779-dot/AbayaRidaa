@@ -27,7 +27,7 @@ export const useExpenseStore = create<ExpenseState>()((set, get) => ({
   initializeData: async (userId: string) => {
     if (get().initialized) return;
     const { data } = await supabase.from("expenses").select("*").eq("user_id", userId).order("date", { ascending: false });
-    const expenses = (data || []).map((e: any) => ({
+    const expenses = (data || []).map((e: Expense) => ({
       id: e.id, category: e.category as ExpenseCategory, description: e.description,
       amount: Number(e.amount), date: e.date, notes: e.notes, isFixed: e.is_fixed,
     }));
@@ -44,7 +44,7 @@ export const useExpenseStore = create<ExpenseState>()((set, get) => ({
   },
 
   updateExpense: async (id, data) => {
-    const payload: any = {};
+    const payload: Partial<Expense> = {};
     if (data.amount !== undefined) payload.amount = data.amount;
     if (data.description !== undefined) payload.description = data.description;
     if (data.category !== undefined) payload.category = data.category;

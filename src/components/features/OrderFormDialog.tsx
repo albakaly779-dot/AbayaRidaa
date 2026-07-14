@@ -40,7 +40,7 @@ export default function OrderFormDialog({ open, onClose }: Props) {
       setEditingPhone(selectedCustomer.phone);
       setShowPhoneEdit(false);
     }
-  }, [customerId]);
+  }, [customerId, selectedCustomer]);
 
   if (!open) return null;
 

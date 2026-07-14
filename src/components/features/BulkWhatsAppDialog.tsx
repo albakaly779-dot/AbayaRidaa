@@ -22,7 +22,7 @@ export default function BulkWhatsAppDialog({ open, onClose, mode }: Props) {
   const [sentCount, setSentCount] = useState(0);
   const [currentRecipient, setCurrentRecipient] = useState<string | null>(null);
   const [waitingForUser, setWaitingForUser] = useState(false);
-  const [sendQueue, setSendQueue] = useState<any[]>([]);
+  const [sendQueue, setSendQueue] = useState<Array<{ id: string; name: string; phone: string; detail: string; message: string; amount: number; validPhone: boolean }>>([]);
   const [queueIndex, setQueueIndex] = useState(0);
 
   const recipients = useMemo(() => {

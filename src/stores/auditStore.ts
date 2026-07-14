@@ -38,7 +38,7 @@ export const useAuditStore = create<AuditState>()((set, get) => ({
   initializeLogs: async (userId: string) => {
     if (get().initialized) return;
     const { data } = await supabase.from("audit_logs").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
-    const logs = (data || []).map((r: any) => ({
+    const logs = (data || []).map((r: AuditLog) => ({
       id: r.id, action: r.action, entityType: r.entity_type,
       entityId: r.entity_id, details: r.details, createdAt: r.created_at,
       ipAddress: r.ip_address || "", userAgent: r.user_agent || "", deviceInfo: r.device_info || "",
