@@ -14,7 +14,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 interface UserRole {
   id: string;
   assignedUserEmail: string;
-  role: "super_admin" | "operations_manager" | "support" | "rep";
+  role: "super_admin" | "operations_manager" | "accountant" | "branch_manager" | "support" | "rep" | "marketer" | "partner";
   permissions: string;
   isActive: boolean;
   createdAt: string;
@@ -33,12 +33,12 @@ interface RoleDef {
 
 const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   super_admin: {
-    label: "مشرف عام",
-    desc: "صلاحية كاملة",
+    label: "مشرف عام / مالك",
+    desc: "صلاحية كاملة على النظام",
     icon: ShieldCheck,
     color: "bg-red-50 text-red-700 border-red-200",
     iconColor: "text-red-600",
-    permissions: ["dashboard", "orders", "customers", "products", "debts", "suppliers", "returns", "expenses", "reps", "reports", "export", "settings", "audit", "rules", "roles", "import", "notifications", "delete"],
+    permissions: ["dashboard", "orders", "customers", "products", "debts", "suppliers", "returns", "expenses", "reps", "reports", "export", "settings", "audit", "rules", "roles", "import", "notifications", "delete", "partners", "approvals", "sessions", "backups"],
   },
   operations_manager: {
     label: "مدير عمليات",
@@ -47,6 +47,22 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
     color: "bg-blue-50 text-blue-700 border-blue-200",
     iconColor: "text-blue-600",
     permissions: ["dashboard", "orders", "customers", "products", "debts", "suppliers", "returns", "expenses", "reps", "reports", "export", "notifications"],
+  },
+  accountant: {
+    label: "محاسب",
+    desc: "مالية، مصاريف، ومديونيات",
+    icon: ShieldCheck,
+    color: "bg-green-50 text-green-700 border-green-200",
+    iconColor: "text-green-600",
+    permissions: ["dashboard", "debts", "expenses", "receipts", "reports", "export", "suppliers", "partners"],
+  },
+  branch_manager: {
+    label: "مدير فرع",
+    desc: "إدارة كل عمليات الفرع",
+    icon: Settings,
+    color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    iconColor: "text-indigo-600",
+    permissions: ["dashboard", "orders", "customers", "products", "debts", "reports", "reps", "notifications"],
   },
   support: {
     label: "دعم فني",
@@ -58,11 +74,27 @@ const ROLE_CONFIG: Record<RoleKey, RoleDef> = {
   },
   rep: {
     label: "مندوب مبيعات",
-    desc: "إدخال بيانات العملاء فقط",
+    desc: "إدخال طلبات وعملاء",
     icon: Users,
     color: "bg-amber-50 text-amber-700 border-amber-200",
     iconColor: "text-amber-600",
-    permissions: ["add_customer", "view_own_customers"],
+    permissions: ["add_customer", "view_own_customers", "add_orders", "rep_dashboard"],
+  },
+  marketer: {
+    label: "مسوق",
+    desc: "الحملات والعروض",
+    icon: Users,
+    color: "bg-pink-50 text-pink-700 border-pink-200",
+    iconColor: "text-pink-600",
+    permissions: ["dashboard", "customers", "notifications", "rules", "reports"],
+  },
+  partner: {
+    label: "شريك",
+    desc: "لوحة أرباح فقط (قراءة)",
+    icon: ShieldCheck,
+    color: "bg-purple-50 text-purple-700 border-purple-200",
+    iconColor: "text-purple-600",
+    permissions: ["partner_dashboard"],
   },
 };
 
@@ -335,7 +367,7 @@ export default function Roles() {
       </div>
 
       {/* Role definitions */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
         {(Object.entries(ROLE_CONFIG) as [RoleKey, RoleDef][]).map(([key, config]) => (
           <div key={key} className={`rounded-2xl p-5 border ${config.color}`}>
             <div className="flex items-center gap-3 mb-3">
@@ -436,10 +468,14 @@ export default function Roles() {
               <label className="mb-1.5 block text-xs font-semibold text-gray-700">الدور</label>
               <select value={role} onChange={(e) => setRole(e.target.value as RoleKey)}
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-gold focus:outline-none">
-                <option value="super_admin">مشرف عام</option>
+                <option value="super_admin">مشرف عام / مالك</option>
                 <option value="operations_manager">مدير عمليات</option>
-                <option value="support">دعم فني</option>
+                <option value="branch_manager">مدير فرع</option>
+                <option value="accountant">محاسب</option>
                 <option value="rep">مندوب مبيعات</option>
+                <option value="marketer">مسوق</option>
+                <option value="support">دعم فني</option>
+                <option value="partner">شريك</option>
               </select>
             </div>
           </div>
@@ -519,8 +555,12 @@ export default function Roles() {
                     className="rounded-lg bg-white text-navy px-2 py-1.5 text-xs font-bold border-0">
                     <option value="super_admin">مشرف عام</option>
                     <option value="operations_manager">مدير عمليات</option>
-                    <option value="support">دعم فني</option>
+                    <option value="branch_manager">مدير فرع</option>
+                    <option value="accountant">محاسب</option>
                     <option value="rep">مندوب</option>
+                    <option value="marketer">مسوق</option>
+                    <option value="support">دعم فني</option>
+                    <option value="partner">شريك</option>
                   </select>
                   <button onClick={handleBulkChangeRole}
                     className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600">

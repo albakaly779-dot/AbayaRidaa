@@ -6,7 +6,15 @@ export const ALLOWED_EMAIL = "albakaly779@gmail.com";
 export const OWNER_PHONE = "+967779673273";
 export const OWNER_NAME = "رداء";
 
-export type UserRole = "admin" | "rep" | "support" | "operations" | "partner";
+export type UserRole =
+  | "admin"          // Super Admin / Owner
+  | "operations"     // Operations Manager
+  | "accountant"     // Accountant
+  | "branch_manager" // Branch Manager
+  | "rep"            // Sales Representative
+  | "marketer"       // Marketing
+  | "support"        // Support
+  | "partner";       // Partner (read-only dashboard)
 
 export interface AuthUser {
   id: string;
@@ -16,6 +24,27 @@ export interface AuthUser {
   role?: UserRole;
   mustChangePassword?: boolean;
   lastPasswordChange?: string;
+}
+
+// Maps stored DB role strings → UI UserRole
+const DB_TO_UI_ROLE: Record<string, UserRole> = {
+  super_admin: "admin",
+  admin: "admin",
+  owner: "admin",
+  operations_manager: "operations",
+  operations: "operations",
+  accountant: "accountant",
+  branch_manager: "branch_manager",
+  rep: "rep",
+  sales_rep: "rep",
+  marketer: "marketer",
+  marketing: "marketer",
+  support: "support",
+  partner: "partner",
+};
+
+export function normalizeRole(dbRole: string): UserRole {
+  return DB_TO_UI_ROLE[dbRole] || "support";
 }
 
 export function mapSupabaseUser(user: User): AuthUser {
@@ -32,49 +61,41 @@ export function mapSupabaseUser(user: User): AuthUser {
 
 export async function detectUserRole(email: string): Promise<UserRole> {
   if (email === ALLOWED_EMAIL) return "admin";
-  
-  // Check partners_config for partner role
-  const { data: partnerData } = await supabase.from("partners_config")
+
+  // 1. Check partners_config for partner role (self-readable via RLS)
+  const { data: partnerData } = await supabase
+    .from("partners_config")
     .select("id")
     .eq("partner_email", email)
     .eq("is_active", true)
     .limit(1);
   if (partnerData && partnerData.length > 0) return "partner";
 
-  // Check user_roles table for assigned role
-  const { data } = await supabase.from("user_roles")
+  // 2. Check user_roles for assigned role (self-readable via RLS)
+  const { data: rolesData } = await supabase
+    .from("user_roles")
     .select("role")
     .eq("assigned_user_email", email)
     .eq("is_active", true)
     .limit(1);
-  
-  if (data && data.length > 0) {
-    const role = data[0].role;
-    if (role === "super_admin" || role === "operations_manager" || role === "support") {
-      const roleMap: Record<string, UserRole> = {
-        super_admin: "admin",
-        operations_manager: "operations",
-        support: "support",
-      };
-      return roleMap[role] || "rep";
-    }
-    return role as UserRole;
+  if (rolesData && rolesData.length > 0) {
+    return normalizeRole(rolesData[0].role);
   }
 
-  // Check if email is a sales rep
-  const { data: repData } = await supabase.from("sales_reps")
+  // 3. Check sales_reps table (self-readable via RLS)
+  const { data: repData } = await supabase
+    .from("sales_reps")
     .select("id")
     .eq("email", email)
     .eq("is_active", true)
     .limit(1);
-  
   if (repData && repData.length > 0) return "rep";
-  
-  return "support"; // Default to lowest permission
+
+  // Default: support (lowest permission)
+  return "support";
 }
 
 export async function sendOtp(email: string) {
-  // Allow admin and any registered rep/role
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: { shouldCreateUser: true },
@@ -119,6 +140,5 @@ export async function signOut() {
 
 // Send email notification to admin when rep adds a customer
 export async function notifyAdminNewCustomer(repName: string, customerName: string, customerPhone: string, source: string) {
-  // Use Supabase edge function or direct email - for now log and use notification store
   console.log(`[NOTIFY ADMIN] المندوب ${repName} أضاف عميل جديد: ${customerName} (${customerPhone}) من ${source}`);
 }

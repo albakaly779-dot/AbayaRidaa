@@ -1,12 +1,20 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Printer, ArrowRight, MessageCircle, FileDown, Ruler } from "lucide-react";
+import { Printer, ArrowRight, MessageCircle, FileDown, Ruler, Sparkles, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
 import { useDataStore } from "@/stores/dataStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/lib/supabase";
 import { formatCurrency, formatDate, formatPhone, getStatusLabel, getPaymentStatusLabel } from "@/lib/formatters";
 import brandLogo from "@/assets/brand-logo.png";
+
+interface CustomTemplate {
+  id: string;
+  name: string;
+  fileUrl: string;
+  fileType: string;
+}
 
 // Page dimensions in millimeters (standard sizes)
 const PAGE_DIMENSIONS = {
@@ -24,6 +32,22 @@ export default function Invoice() {
   const { settings, initializeSettings } = useSettingsStore();
 
   useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
+
+  // Load active custom template if any
+  const [customTemplate, setCustomTemplate] = useState<CustomTemplate | null>(null);
+  const [useCustom, setUseCustom] = useState(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      const { data } = await supabase.from("invoice_templates_custom")
+        .select("id, name, file_url, file_type")
+        .eq("user_id", user.id).eq("is_active", true).maybeSingle();
+      if (data) {
+        setCustomTemplate({ id: data.id, name: data.name, fileUrl: data.file_url, fileType: data.file_type });
+        setUseCustom(true);
+      }
+    })();
+  }, [user?.id]);
 
   const order = orders.find((o) => o.id === orderId);
   const customer = order ? customers.find((c) => c.id === order.customerId) : null;
@@ -147,6 +171,14 @@ ${order.dueDate ? `موعد التسليم: ${formatDate(order.dueDate)}` : ""}
           <ArrowRight className="size-4" /> العودة للطلبات
         </button>
         <div className="flex items-center gap-2 flex-wrap">
+          {customTemplate && (
+            <button onClick={() => setUseCustom(!useCustom)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                useCustom ? "bg-purple-600 text-white" : "bg-purple-50 border border-purple-300 text-purple-700"
+              }`}>
+              <LayoutTemplate className="size-3.5" /> {useCustom ? `القالب المخصص: ${customTemplate.name}` : "استخدم القالب المخصص"}
+            </button>
+          )}
           <span className="flex items-center gap-1.5 rounded-lg bg-blue-50 border border-blue-200 px-3 py-1.5 text-[11px] font-bold text-blue-700">
             <Ruler className="size-3.5" /> {dims.label}
           </span>
@@ -169,6 +201,45 @@ ${order.dueDate ? `موعد التسليم: ${formatDate(order.dueDate)}` : ""}
 
       {/* Screen preview wrapper — shows the actual paper size */}
       <div className="mx-auto bg-gray-100 py-4 print:bg-white print:py-0 overflow-x-auto">
+        {/* Custom template mode - render template as page header with data table */}
+        {useCustom && customTemplate ? (
+          <div className="invoice-paper mx-auto bg-white shadow-lg print:shadow-none border border-gray-200 print:border-none"
+            style={{ width: dims.width, minHeight: dims.minHeight, maxWidth: "100%", padding: isThermal ? "4px" : "16px" }}>
+            {customTemplate.fileType === "pdf" ? (
+              <iframe src={customTemplate.fileUrl} className="w-full h-[400px] border-0 mb-4" title={customTemplate.name} />
+            ) : (
+              <img src={customTemplate.fileUrl} alt={customTemplate.name} className="w-full h-auto mb-4 rounded" />
+            )}
+            <div className="px-4 space-y-3" style={{ fontSize: isThermal ? "10px" : "12px" }}>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div><b>العميل:</b> {order.customerName}</div>
+                <div dir="ltr"><b>الطلب:</b> {order.orderNumber}</div>
+                <div><b>التاريخ:</b> {formatDate(order.createdAt)}</div>
+                <div dir="ltr"><b>الهاتف:</b> {formatPhone(order.customerPhone)}</div>
+              </div>
+              <table className="w-full text-xs" style={{ borderTop: `1px solid ${primary}` }}>
+                <thead><tr><th className="py-1 text-right">المنتج</th><th className="text-center">كم</th><th className="text-left">السعر</th><th className="text-left">الإجمالي</th></tr></thead>
+                <tbody>
+                  {order.items.map((it) => (
+                    <tr key={it.id} style={{ borderTop: "1px solid #eee" }}>
+                      <td className="py-1">{it.productName}</td>
+                      <td className="text-center">{it.quantity}</td>
+                      <td className="text-left tabular-nums">{formatCurrency(it.unitPrice)}</td>
+                      <td className="text-left tabular-nums font-bold">{formatCurrency(it.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="space-y-1 mt-2" style={{ borderTop: `2px solid ${primary}` }}>
+                <div className="flex justify-between pt-1"><span>الفرعي</span><span className="tabular-nums">{formatCurrency(order.subtotal)}</span></div>
+                {order.discount > 0 && <div className="flex justify-between text-red-600"><span>الخصم</span><span className="tabular-nums">- {formatCurrency(order.discount)}</span></div>}
+                <div className="flex justify-between font-bold text-base" style={{ color: primary }}><span>الإجمالي</span><span className="tabular-nums">{formatCurrency(order.total)}</span></div>
+                <div className="flex justify-between text-emerald-700"><span>المدفوع</span><span className="tabular-nums">{formatCurrency(order.paid)}</span></div>
+                {order.remaining > 0 && <div className="flex justify-between font-bold text-red-600"><span>المتبقي</span><span className="tabular-nums">{formatCurrency(order.remaining)}</span></div>}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div
           className="invoice-paper mx-auto bg-white shadow-lg print:shadow-none border border-gray-200 print:border-none"
           style={{
@@ -401,6 +472,7 @@ ${order.dueDate ? `موعد التسليم: ${formatDate(order.dueDate)}` : ""}
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );
