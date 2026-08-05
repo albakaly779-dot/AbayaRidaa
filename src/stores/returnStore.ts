@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
-import type { Return } from "@/types";
+import type { Return, ReturnItem } from "@/types";
 import { toast } from "sonner";
 
 interface ReturnState {
@@ -28,18 +28,35 @@ export const useReturnStore = create<ReturnState>()((set, get) => ({
       supabase.from("returns").select("*").eq("user_id", userId).order("date", { ascending: false }),
       supabase.from("return_items").select("*"),
     ]);
-    const itemsByReturn = new Map<string, any[]>();
-    (itemsRes.data || []).forEach((item: ReturnItem) => {
-      const list = itemsByReturn.get(item.return_id) || [];
-      list.push({ id: item.id, productCode: item.product_code, productName: item.product_name, quantity: item.quantity, unitPrice: Number(item.unit_price), total: Number(item.total) });
-      itemsByReturn.set(item.return_id, list);
+    const itemsByReturn = new Map<string, ReturnItem[]>();
+    (itemsRes.data || []).forEach((item: Record<string, unknown>) => {
+      const returnId = item.return_id as string;
+      const list = itemsByReturn.get(returnId) || [];
+      list.push({
+        id: item.id as string,
+        productCode: item.product_code as string,
+        productName: item.product_name as string,
+        quantity: item.quantity as number,
+        unitPrice: Number(item.unit_price),
+        total: Number(item.total),
+      });
+      itemsByReturn.set(returnId, list);
     });
-    const returns = (retRes.data || []).map((r: Return) => ({
-      id: r.id, type: r.type, orderId: r.order_id, orderNumber: r.order_number,
-      customerId: r.customer_id, customerName: r.customer_name,
-      supplierId: r.supplier_id, supplierName: r.supplier_name,
-      items: itemsByReturn.get(r.id) || [], reason: r.reason,
-      totalAmount: Number(r.total_amount), status: r.status, date: r.date, notes: r.notes,
+    const returns = (retRes.data || []).map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      type: r.type as Return["type"],
+      orderId: r.order_id as string | undefined,
+      orderNumber: r.order_number as string | undefined,
+      customerId: r.customer_id as string | undefined,
+      customerName: r.customer_name as string | undefined,
+      supplierId: r.supplier_id as string | undefined,
+      supplierName: r.supplier_name as string | undefined,
+      items: itemsByReturn.get(r.id as string) || [],
+      reason: r.reason as string,
+      totalAmount: Number(r.total_amount),
+      status: r.status as Return["status"],
+      date: r.date as string,
+      notes: r.notes as string,
     }));
     set({ returns, loading: false, initialized: true });
   },
