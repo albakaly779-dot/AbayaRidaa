@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Printer, ArrowRight, MessageCircle, FileDown, Ruler, Sparkles, LayoutTemplate } from "lucide-react";
+import { Printer, ArrowRight, MessageCircle, FileDown, Ruler, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
 import { useDataStore } from "@/stores/dataStore";
 import { useSettingsStore } from "@/stores/settingsStore";
