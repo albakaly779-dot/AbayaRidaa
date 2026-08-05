@@ -77,6 +77,18 @@ export function useAuth(): AuthState {
           mapped.role = globalRole;
           globalUser = mapped;
           notify();
+        } else if (event === "USER_UPDATED" && session?.user) {
+          // Refresh user metadata when password changed or profile updated
+          const mapped = mapSupabaseUser(session.user);
+          mapped.role = globalRole;
+          globalUser = mapped;
+          notify();
+        } else if (event === "PASSWORD_RECOVERY" && session?.user) {
+          const mapped = mapSupabaseUser(session.user);
+          mapped.role = globalRole;
+          mapped.mustChangePassword = true;
+          globalUser = mapped;
+          notify();
         }
       }
     );
