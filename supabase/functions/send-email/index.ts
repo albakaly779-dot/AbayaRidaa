@@ -2,6 +2,8 @@ import { corsHeaders } from "../_shared/cors.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
+const ADMIN_EMAIL = "albakaly779@gmail.com";
+
 interface SmtpConfig {
   host: string;
   port: number;
@@ -29,12 +31,19 @@ interface SendEmailBody {
   testMode?: boolean;
 }
 
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
   try {
+    // ---------------- AUTHENTICATION ----------------
     const authHeader = req.headers.get("Authorization");
     const token = authHeader?.replace("Bearer ", "");
     if (!token) {
@@ -58,7 +67,8 @@ Deno.serve(async (req) => {
     const supabaseClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
-    const { data: { user: caller }, error: authError } = await supabaseClient.auth.getUser(token);
+    const { data: { user: caller }, error: authError } = await supabaseClient
+      .auth.getUser(token);
     if (authError || !caller) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
@@ -66,6 +76,21 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ---------------- AUTHORIZATION ----------------
+    // Only admin can send emails via this function.
+    // Regular users must not be able to spoof or spam through the SMTP relay.
+    const callerEmail = (caller.email || "").toLowerCase();
+    if (callerEmail !== ADMIN_EMAIL.toLowerCase()) {
+      console.warn(`[send-email] Unauthorized attempt by ${callerEmail}`);
+      return new Response(
+        JSON.stringify({
+          error: "غير مصرح — إرسال البريد متاح للمشرف العام فقط",
+        }),
+        { status: 403, headers: jsonHeaders },
+      );
+    }
+
+    // ---------------- INPUT VALIDATION ----------------
     let body: SendEmailBody;
     try {
       body = await req.json();
@@ -85,17 +110,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    if (!isValidEmail(to)) {
       return new Response(
         JSON.stringify({ error: `بريد المستلم غير صالح: ${to}` }),
         { status: 400, headers: jsonHeaders },
       );
     }
 
-    // Load config
+    // Subject/body length limits to prevent abuse
+    if (subject.length > 300) {
+      return new Response(
+        JSON.stringify({ error: "الموضوع طويل جداً (حد 300 حرف)" }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+    if ((html || "").length > 500_000 || (text || "").length > 500_000) {
+      return new Response(
+        JSON.stringify({ error: "محتوى البريد طويل جداً" }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+
+    // ---------------- LOAD SMTP CONFIG ----------------
     let config: SmtpConfig;
     if (overrideConfig && overrideConfig.host && overrideConfig.user) {
+      // Override only allowed for admin (already verified above)
       config = {
         host: overrideConfig.host,
         port: parseInt(String(overrideConfig.port || 587)),
@@ -112,24 +151,35 @@ Deno.serve(async (req) => {
         .select("key, value")
         .eq("user_id", caller.id)
         .in("key", [
-          "smtpEnabled", "smtpHost", "smtpPort", "smtpUser",
-          "smtpPassword", "smtpFromEmail", "smtpFromName", "smtpUseTls",
+          "smtpEnabled",
+          "smtpHost",
+          "smtpPort",
+          "smtpUser",
+          "smtpPassword",
+          "smtpFromEmail",
+          "smtpFromName",
+          "smtpUseTls",
         ]);
 
       if (rowsErr) {
         return new Response(
-          JSON.stringify({ error: "فشل تحميل إعدادات SMTP: " + rowsErr.message }),
+          JSON.stringify({
+            error: "تعذر تحميل إعدادات SMTP.",
+            technical: rowsErr.message,
+          }),
           { status: 500, headers: jsonHeaders },
         );
       }
 
       const cfg: Record<string, string> = {};
-      (rows || []).forEach((r: { key: string; value: string }) => { cfg[r.key] = r.value; });
+      (rows || []).forEach((r: { key: string; value: string }) => {
+        cfg[r.key] = r.value;
+      });
 
       if (cfg.smtpEnabled !== "true") {
         return new Response(
           JSON.stringify({
-            error: "SMTP غير مفعّل — قم بتفعيله وحفظ الإعدادات أولاً",
+            error: "SMTP غير مفعّل — فعّله وأحفظ الإعدادات أولاً",
             hint: "اذهب لصفحة الإعدادات > قسم SMTP وفعّله",
           }),
           { status: 400, headers: jsonHeaders },
@@ -140,7 +190,8 @@ Deno.serve(async (req) => {
         return new Response(
           JSON.stringify({
             error: "بيانات SMTP ناقصة — تأكد من إدخال Host و User",
-            hint: "Gmail: smtp.gmail.com | Outlook: smtp-mail.outlook.com | Zoho: smtp.zoho.com",
+            hint:
+              "Gmail: smtp.gmail.com | Outlook: smtp-mail.outlook.com | Zoho: smtp.zoho.com",
           }),
           { status: 400, headers: jsonHeaders },
         );
@@ -161,13 +212,14 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           error: "كلمة مرور SMTP فارغة",
-          hint: "لـ Gmail: استخدم App Password من إعدادات Google. لـ SendGrid: user=apikey و password=مفتاح API",
+          hint:
+            "لـ Gmail: استخدم App Password من إعدادات Google. لـ SendGrid: user=apikey و password=مفتاح API",
         }),
         { status: 400, headers: jsonHeaders },
       );
     }
 
-    // Send via SMTP
+    // ---------------- SEND VIA SMTP ----------------
     const client = new SMTPClient({
       connection: {
         hostname: config.host,
@@ -188,12 +240,18 @@ Deno.serve(async (req) => {
         content: text || subject,
         html: html || `<p>${text || subject}</p>`,
       });
-      try { await client.close(); } catch { /* ignore */ }
+      try {
+        await client.close();
+      } catch { /* ignore */ }
 
       return new Response(
         JSON.stringify({
           success: true,
-          message: testMode ? "تم إرسال الإيميل التجريبي بنجاح" : "تم الإرسال بنجاح",
+          message: testMode
+            ? "تم إرسال الإيميل التجريبي إلى خادم SMTP بنجاح. تحقق من صندوق البريد."
+            : "تم تسليم الرسالة إلى خادم SMTP بنجاح.",
+          note:
+            "التسليم إلى خادم SMTP لا يضمن الوصول إلى صندوق المستلم — تحقق من Spam/Junk",
           to,
           from: `${config.fromName} <${config.fromEmail}>`,
           via: `${config.host}:${config.port}`,
@@ -201,26 +259,55 @@ Deno.serve(async (req) => {
         { status: 200, headers: jsonHeaders },
       );
     } catch (smtpErr) {
-      try { await client.close(); } catch { /* ignore */ }
-      const errMsg = smtpErr instanceof Error ? smtpErr.message : "خطأ SMTP غير معروف";
-      let hint = "تأكد من: صحة Host والـ Port، استخدام App Password للـ Gmail/Zoho، وأن TLS مضبوط";
-      if (errMsg.toLowerCase().includes("auth")) {
-        hint = "خطأ مصادقة: كلمة المرور خاطئة أو تحتاج App Password. Gmail: https://myaccount.google.com/apppasswords";
-      } else if (errMsg.toLowerCase().includes("timeout") || errMsg.toLowerCase().includes("connect")) {
-        hint = "خطأ اتصال: تحقق من Host والـ Port، وأن الشبكة تسمح بالاتصال الخارجي بالمنفذ";
+      try {
+        await client.close();
+      } catch { /* ignore */ }
+      const errMsg = smtpErr instanceof Error
+        ? smtpErr.message
+        : "خطأ SMTP غير معروف";
+      let hint =
+        "تأكد من: صحة Host والـ Port، استخدام App Password للـ Gmail/Zoho، وأن TLS مضبوط";
+      const lower = errMsg.toLowerCase();
+      if (lower.includes("auth") || lower.includes("535")) {
+        hint =
+          "خطأ مصادقة: كلمة المرور خاطئة أو تحتاج App Password. Gmail: https://myaccount.google.com/apppasswords";
+      } else if (
+        lower.includes("timeout") || lower.includes("connect") ||
+        lower.includes("network")
+      ) {
+        hint =
+          "خطأ اتصال: تحقق من Host والـ Port، وأن الشبكة تسمح بالاتصال الخارجي بالمنفذ";
+      } else if (lower.includes("tls") || lower.includes("ssl")) {
+        hint =
+          "خطأ TLS: جرّب تغيير TLS/STARTTLS أو استخدام port آخر (465 لـ SSL، 587 لـ STARTTLS)";
+      } else if (lower.includes("relay")) {
+        hint =
+          "خطأ Relay: الخادم يرفض إرسال الرسائل — تحقق من إعدادات المزود";
       }
       console.error("SMTP send error:", errMsg);
       return new Response(
-        JSON.stringify({ error: `SMTP Error: ${errMsg}`, hint }),
+        JSON.stringify({
+          error: "تعذر إرسال البريد. تحقق من إعدادات SMTP.",
+          technical: errMsg,
+          hint,
+        }),
         { status: 500, headers: jsonHeaders },
       );
     }
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "خطأ غير معروف";
+    const errorMessage = error instanceof Error
+      ? error.message
+      : "خطأ غير معروف";
     console.error("send-email fatal:", errorMessage);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        error: "خطأ غير متوقع في خادم البريد.",
+        technical: errorMessage,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });

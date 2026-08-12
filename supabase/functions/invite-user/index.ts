@@ -33,11 +33,37 @@ const ROLE_LABELS: Record<string, string> = {
   partner: "شريك",
 };
 
+// Roles that admins can create through the current UI
+// (rep/support/partner disabled per business requirement; kept in system for future)
+const ALLOWED_ROLES_FOR_CREATION = new Set([
+  "super_admin",
+  "operations_manager",
+  "branch_manager",
+  "accountant",
+  "marketer",
+]);
+
+// Additional roles allowed only via direct API (for backwards compat with existing rows)
+const ALL_KNOWN_ROLES = new Set([
+  ...ALLOWED_ROLES_FOR_CREATION,
+  "support",
+  "rep",
+  "partner",
+]);
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isStrongEnoughPassword(pw: string): boolean {
+  return typeof pw === "string" && pw.length >= 8;
+}
+
 async function findUserIdByEmail(
   supabaseAdmin: ReturnType<typeof createClient>,
   email: string,
 ): Promise<string | null> {
-  // Strategy 1: user_profiles (synced by trigger, no pagination needed)
+  // Primary strategy: query user_profiles synced by trigger — no pagination bug
   const { data: profile } = await supabaseAdmin
     .from("user_profiles")
     .select("id")
@@ -45,13 +71,19 @@ async function findUserIdByEmail(
     .maybeSingle();
   if (profile?.id) return profile.id as string;
 
-  // Strategy 2: paginated listUsers as fallback
+  // Fallback: explicit pagination on listUsers (avoids empty query-string bug)
   try {
     let page = 1;
     while (page <= 20) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 100 });
+      const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage: 100,
+      });
       if (error) break;
-      const found = data?.users?.find((u: { email?: string }) => u.email === email);
+      const found = data?.users?.find(
+        (u: { email?: string }) =>
+          (u.email || "").toLowerCase() === email.toLowerCase(),
+      );
       if (found) return found.id;
       if (!data?.users || data.users.length < 100) break;
       page++;
@@ -77,8 +109,14 @@ async function sendCredentialsEmail(
       .select("key, value")
       .eq("user_id", adminUserId)
       .in("key", [
-        "smtpEnabled", "smtpHost", "smtpPort", "smtpUser",
-        "smtpPassword", "smtpFromEmail", "smtpFromName", "smtpUseTls",
+        "smtpEnabled",
+        "smtpHost",
+        "smtpPort",
+        "smtpUser",
+        "smtpPassword",
+        "smtpFromEmail",
+        "smtpFromName",
+        "smtpUseTls",
       ]);
 
     const cfg: SmtpCfg = {};
@@ -87,13 +125,18 @@ async function sendCredentialsEmail(
     });
 
     if (cfg.smtpEnabled !== "true") {
-      return { sent: false, error: "SMTP غير مفعّل — قم بتفعيله من صفحة الإعدادات" };
+      return {
+        sent: false,
+        error: "SMTP غير مفعّل — قم بتفعيله من صفحة الإعدادات",
+      };
     }
     if (!cfg.smtpHost || !cfg.smtpUser) {
       return { sent: false, error: "بيانات SMTP ناقصة (Host/User)" };
     }
 
-    const { SMTPClient } = await import("https://deno.land/x/denomailer@1.6.0/mod.ts");
+    const { SMTPClient } = await import(
+      "https://deno.land/x/denomailer@1.6.0/mod.ts"
+    );
     const client = new SMTPClient({
       connection: {
         hostname: cfg.smtpHost,
@@ -108,7 +151,8 @@ async function sendCredentialsEmail(
 
     const roleLabel = ROLE_LABELS[role] || "مستخدم";
     const loginUrl = `${origin}/login`;
-    const html = `<div dir="rtl" style="font-family:Cairo,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;background:#f8f6f0;border-radius:12px">
+    const html =
+      `<div dir="rtl" style="font-family:Cairo,Arial,sans-serif;max-width:600px;margin:auto;padding:20px;background:#f8f6f0;border-radius:12px">
   <h2 style="color:#1a2332;text-align:center">🌸 مرحباً ${fullName}</h2>
   <p>تم إنشاء حسابك في نظام <b>رداء</b> لإدارة المبيعات.</p>
   <div style="background:white;padding:20px;border-radius:10px;margin:20px 0;border-right:4px solid #c9a84c">
@@ -124,16 +168,23 @@ async function sendCredentialsEmail(
   <p style="color:#999;font-size:12px;text-align:center">نظام رداء لإدارة المبيعات · لا ترد على هذا البريد</p>
 </div>`;
 
-    const text = `مرحباً ${fullName}\n\nتم إنشاء حسابك في نظام رداء:\nالبريد: ${email}\nكلمة المرور: ${password}\nالدور: ${roleLabel}\n\nيرجى تغيير كلمة المرور بعد أول دخول.\n${loginUrl}`;
+    const text =
+      `مرحباً ${fullName}\n\nتم إنشاء حسابك في نظام رداء:\nالبريد: ${email}\nكلمة المرور: ${password}\nالدور: ${roleLabel}\n\nيرجى تغيير كلمة المرور بعد أول دخول.\n${loginUrl}`;
 
     await client.send({
-      from: `${cfg.smtpFromName || "رداء"} <${cfg.smtpFromEmail || cfg.smtpUser}>`,
+      from: `${cfg.smtpFromName || "رداء"} <${
+        cfg.smtpFromEmail || cfg.smtpUser
+      }>`,
       to: email,
       subject: "🌸 حسابك في نظام رداء - بيانات الدخول",
       content: text,
       html,
     });
-    try { await client.close(); } catch { /* ignore */ }
+    try {
+      await client.close();
+    } catch {
+      /* ignore */
+    }
     return { sent: true, error: "" };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "SMTP error";
@@ -143,11 +194,16 @@ async function sendCredentialsEmail(
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
   const jsonHeaders = { ...corsHeaders, "Content-Type": "application/json" };
 
   try {
+    // ------------------------------------------------------------------
+    // 1. AUTHENTICATION — must have a valid session
+    // ------------------------------------------------------------------
     const authHeader = req.headers.get("Authorization");
     const token = authHeader?.replace("Bearer ", "");
 
@@ -169,11 +225,11 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify caller
     const supabaseClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
-    const { data: { user: caller }, error: authError } = await supabaseClient.auth.getUser(token);
+    const { data: { user: caller }, error: authError } = await supabaseClient
+      .auth.getUser(token);
     if (authError || !caller) {
       return new Response(
         JSON.stringify({ error: "Unauthorized — يجب تسجيل الدخول" }),
@@ -181,7 +237,24 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse body
+    // ------------------------------------------------------------------
+    // 2. AUTHORIZATION — only admin can create users (server-side check)
+    // ------------------------------------------------------------------
+    if ((caller.email || "").toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+      console.warn(
+        `[invite-user] Unauthorized attempt by ${caller.email} (id=${caller.id})`,
+      );
+      return new Response(
+        JSON.stringify({
+          error: "غير مصرح — هذه العملية للمشرف العام فقط",
+        }),
+        { status: 403, headers: jsonHeaders },
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // 3. INPUT VALIDATION
+    // ------------------------------------------------------------------
     let body: InviteBody;
     try {
       body = await req.json();
@@ -192,109 +265,151 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { email, password, role, fullName, sendEmail } = body;
-    if (!email || !password) {
+    const rawEmail = (body.email || "").trim().toLowerCase();
+    const password = body.password || "";
+    const role = (body.role || "support").trim();
+    const fullName = (body.fullName || "").trim();
+    const sendEmail = body.sendEmail === true;
+
+    if (!rawEmail || !isValidEmail(rawEmail)) {
       return new Response(
-        JSON.stringify({ error: "البريد وكلمة المرور مطلوبان" }),
+        JSON.stringify({ error: "البريد الإلكتروني غير صالح" }),
         { status: 400, headers: jsonHeaders },
       );
     }
-    if (password.length < 6) {
+    if (!isStrongEnoughPassword(password)) {
       return new Response(
-        JSON.stringify({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل" }),
+        JSON.stringify({
+          error: "كلمة المرور يجب أن تكون 8 أحرف على الأقل",
+        }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+    if (!ALL_KNOWN_ROLES.has(role)) {
+      return new Response(
+        JSON.stringify({ error: `الدور "${role}" غير معروف` }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+    if (!ALLOWED_ROLES_FOR_CREATION.has(role)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "هذا الدور غير متاح للإنشاء حالياً. الأدوار المتاحة: مشرف عام، مدير عمليات، مدير فرع، محاسب، مسوق",
+        }),
         { status: 400, headers: jsonHeaders },
       );
     }
 
-    // Service role client
+    // Prevent creating another admin with the same reserved email
+    if (rawEmail === ADMIN_EMAIL.toLowerCase() && rawEmail !== (caller.email || "").toLowerCase()) {
+      return new Response(
+        JSON.stringify({ error: "لا يمكن إنشاء حساب بالبريد المحجوز للمشرف" }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
+
+    const displayName = fullName || rawEmail.split("@")[0];
+    const now = new Date().toISOString();
+
+    // Service role client (bypasses RLS)
     const supabaseAdmin = createClient(supabaseUrl, serviceKey);
 
-    const displayName = (fullName || email.split("@")[0]).trim();
-    const roleKey = role || "support";
-    const now = new Date().toISOString();
+    // ------------------------------------------------------------------
+    // 4. USER PROVISIONING (create or update)
+    //
+    // Keep user_metadata minimal — do NOT use fields that clash with
+    // Supabase internal columns (created_at, updated_at, aud, role, sub).
+    // Those clashes previously caused the mysterious "ipNotInner" error.
+    // ------------------------------------------------------------------
+    const safeMetadata = {
+      username: displayName,
+      full_name: displayName,
+      assigned_role: role,
+      must_change_password: true,
+      last_password_reset: now,
+    };
 
     let userId: string | null = null;
     let wasExisting = false;
 
-    // Try to find existing user first (avoids listUsers pagination bug)
-    userId = await findUserIdByEmail(supabaseAdmin, email);
+    userId = await findUserIdByEmail(supabaseAdmin, rawEmail);
 
     if (userId) {
-      // Update existing user
       wasExisting = true;
-      const { data: existing } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const { data: existing } = await supabaseAdmin.auth.admin.getUserById(
+        userId,
+      );
       const existingMeta = existing?.user?.user_metadata || {};
 
-      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        password,
-        email_confirm: true,
-        user_metadata: {
-          ...existingMeta,
-          username: displayName,
-          full_name: displayName,
-          assigned_role: roleKey,
-          must_change_password: true,
-          last_password_reset: now,
-        },
-      });
+      const { error: updateError } = await supabaseAdmin.auth.admin
+        .updateUserById(userId, {
+          password,
+          email_confirm: true,
+          user_metadata: {
+            ...existingMeta,
+            ...safeMetadata,
+          },
+        });
 
       if (updateError) {
         console.error("updateUserById failed:", updateError.message);
         return new Response(
-          JSON.stringify({ error: "فشل تحديث المستخدم: " + updateError.message }),
+          JSON.stringify({
+            error: "تعذر تحديث الحساب. يرجى المحاولة مرة أخرى.",
+            technical: updateError.message,
+          }),
           { status: 500, headers: jsonHeaders },
         );
       }
     } else {
-      // Create new user
-      const { data: newUserData, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          username: displayName,
-          full_name: displayName,
-          invited_by: caller.email,
-          assigned_role: roleKey,
-          must_change_password: true,
-          created_at: now,
-        },
-      });
+      const { data: newUserData, error: createError } = await supabaseAdmin
+        .auth.admin.createUser({
+          email: rawEmail,
+          password,
+          email_confirm: true,
+          user_metadata: safeMetadata,
+        });
 
       if (createError) {
-        // If race-conditioned "already exists" - try to find & update
         const msg = createError.message.toLowerCase();
-        if (msg.includes("already been registered") || msg.includes("email_exists") || msg.includes("duplicate")) {
-          userId = await findUserIdByEmail(supabaseAdmin, email);
+        if (
+          msg.includes("already been registered") ||
+          msg.includes("email_exists") || msg.includes("duplicate")
+        ) {
+          userId = await findUserIdByEmail(supabaseAdmin, rawEmail);
           if (userId) {
             wasExisting = true;
-            const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-              password,
-              email_confirm: true,
-              user_metadata: {
-                username: displayName,
-                full_name: displayName,
-                assigned_role: roleKey,
-                must_change_password: true,
-                last_password_reset: now,
-              },
-            });
+            const { error: updErr } = await supabaseAdmin.auth.admin
+              .updateUserById(userId, {
+                password,
+                email_confirm: true,
+                user_metadata: safeMetadata,
+              });
             if (updErr) {
               return new Response(
-                JSON.stringify({ error: "فشل التحديث: " + updErr.message }),
+                JSON.stringify({
+                  error: "تعذر تحديث الحساب. يرجى المحاولة مرة أخرى.",
+                  technical: updErr.message,
+                }),
                 { status: 500, headers: jsonHeaders },
               );
             }
           } else {
             return new Response(
-              JSON.stringify({ error: "البريد مسجّل مسبقاً لكن تعذّر العثور على الحساب" }),
+              JSON.stringify({
+                error: "البريد مسجّل مسبقاً لكن تعذّر العثور على الحساب",
+              }),
               { status: 500, headers: jsonHeaders },
             );
           }
         } else {
           console.error("createUser failed:", createError.message);
           return new Response(
-            JSON.stringify({ error: "فشل إنشاء المستخدم: " + createError.message }),
+            JSON.stringify({
+              error: "تعذر إنشاء الحساب. تحقق من صحة البيانات.",
+              technical: createError.message,
+            }),
             { status: 500, headers: jsonHeaders },
           );
         }
@@ -310,7 +425,126 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Log credentials as internal notification for admin
+    // ------------------------------------------------------------------
+    // 5. ROLE ASSIGNMENT (atomic with user creation — recovery on fail)
+    // ------------------------------------------------------------------
+    let roleAssignmentError: string | null = null;
+    try {
+      // Build permissions list based on role (kept in sync with UI)
+      const rolePermissions: Record<string, string[]> = {
+        super_admin: [
+          "dashboard",
+          "orders",
+          "customers",
+          "products",
+          "debts",
+          "suppliers",
+          "returns",
+          "expenses",
+          "reps",
+          "reports",
+          "export",
+          "settings",
+          "audit",
+          "rules",
+          "roles",
+          "import",
+          "notifications",
+          "delete",
+          "partners",
+          "approvals",
+          "sessions",
+          "backups",
+        ],
+        operations_manager: [
+          "dashboard",
+          "orders",
+          "customers",
+          "products",
+          "debts",
+          "suppliers",
+          "returns",
+          "expenses",
+          "reps",
+          "reports",
+          "export",
+          "notifications",
+        ],
+        accountant: [
+          "dashboard",
+          "debts",
+          "expenses",
+          "receipts",
+          "reports",
+          "export",
+          "suppliers",
+          "partners",
+        ],
+        branch_manager: [
+          "dashboard",
+          "orders",
+          "customers",
+          "products",
+          "debts",
+          "reports",
+          "reps",
+          "notifications",
+        ],
+        marketer: [
+          "dashboard",
+          "customers",
+          "notifications",
+          "rules",
+          "reports",
+        ],
+        rep: ["add_customer", "view_own_customers", "add_orders", "rep_dashboard"],
+        support: ["dashboard", "orders", "customers", "products", "debts", "reports"],
+        partner: ["partner_dashboard"],
+      };
+
+      const { error: rlErr } = await supabaseAdmin.from("user_roles").upsert(
+        {
+          user_id: caller.id, // admin who created it
+          assigned_user_email: rawEmail,
+          role,
+          permissions: JSON.stringify(rolePermissions[role] || []),
+          is_active: true,
+        },
+        { onConflict: "user_id,assigned_user_email" },
+      );
+      if (rlErr) {
+        roleAssignmentError = rlErr.message;
+        console.error("Role assignment failed:", rlErr.message);
+      }
+    } catch (roleErr) {
+      roleAssignmentError = roleErr instanceof Error
+        ? roleErr.message
+        : "role assignment error";
+      console.error("Role assignment exception:", roleAssignmentError);
+    }
+
+    // If role assignment failed and this was a NEW user, delete them to keep DB consistent
+    if (roleAssignmentError && !wasExisting) {
+      console.warn(
+        `[invite-user] Rolling back user ${userId} because role assignment failed`,
+      );
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(userId);
+      } catch (delErr) {
+        console.error("Rollback delete failed:", delErr);
+      }
+      return new Response(
+        JSON.stringify({
+          error: "تم إنشاء الحساب لكن فشل تعيين الدور — تم التراجع",
+          technical: roleAssignmentError,
+        }),
+        { status: 500, headers: jsonHeaders },
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // 6. NOTIFICATION (WITHOUT plaintext password)
+    // ------------------------------------------------------------------
     let emailSent = false;
     let emailError = "";
     try {
@@ -323,26 +557,31 @@ Deno.serve(async (req) => {
       const adminUserId = adminProfile?.id as string | undefined;
 
       if (adminUserId) {
+        // Store notification WITHOUT password — only metadata
         await supabaseAdmin.from("notifications").insert({
           user_id: adminUserId,
           type: "custom",
           recipient_name: displayName,
-          recipient_phone: email,
-          message: `🔐 بيانات دخول ${wasExisting ? "محدّثة" : "جديدة"}:\nالبريد: ${email}\nكلمة المرور: ${password}\nالدور: ${ROLE_LABELS[roleKey] || roleKey}\nأنشأه: ${caller.email}`,
+          recipient_phone: rawEmail,
+          message: `🔐 حساب ${
+            wasExisting ? "محدّث" : "جديد"
+          }:\nالبريد: ${rawEmail}\nالدور: ${
+            ROLE_LABELS[role] || role
+          }\nأنشأه: ${caller.email}\n(كلمة المرور المؤقتة أُنشئت — تحقق من الواجهة أو أرسلها للمستخدم)`,
           status: "sent",
         });
       }
 
-      // Send credentials email if requested
+      // Optionally send credentials via SMTP
       if (sendEmail && adminUserId) {
         const origin = req.headers.get("origin") || "";
         const result = await sendCredentialsEmail(
           supabaseAdmin,
           adminUserId,
-          email,
+          rawEmail,
           password,
           displayName,
-          roleKey,
+          role,
           origin,
         );
         emailSent = result.sent;
@@ -357,10 +596,11 @@ Deno.serve(async (req) => {
         success: true,
         userId,
         wasExisting,
-        email,
+        email: rawEmail,
         adminEmail: ADMIN_EMAIL,
         emailSent,
         emailError,
+        roleWarning: roleAssignmentError,
         message: wasExisting
           ? "تم تحديث الحساب وكلمة المرور بنجاح"
           : "تم إنشاء الحساب بنجاح — جاهز للدخول الفوري",
@@ -368,11 +608,19 @@ Deno.serve(async (req) => {
       { status: 200, headers: jsonHeaders },
     );
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "خطأ غير معروف";
+    const errorMessage = error instanceof Error
+      ? error.message
+      : "خطأ غير معروف";
     console.error("invite-user error:", errorMessage);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      JSON.stringify({
+        error: "خطأ غير متوقع. يرجى المحاولة مرة أخرى.",
+        technical: errorMessage,
+      }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
     );
   }
 });

@@ -22,6 +22,17 @@ interface UserRole {
 
 type RoleKey = UserRole["role"];
 
+// Roles the admin can currently create via UI.
+// (rep, support, partner intentionally excluded per business decision.)
+// The full ROLE_CONFIG below still exists so pre-existing rows keep rendering correctly.
+const CREATABLE_ROLES: RoleKey[] = [
+  "super_admin",
+  "operations_manager",
+  "branch_manager",
+  "accountant",
+  "marketer",
+];
+
 interface RoleDef {
   label: string;
   desc: string;
@@ -120,7 +131,7 @@ export default function Roles() {
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
-  const [role, setRole] = useState<RoleKey>("support");
+  const [role, setRole] = useState<RoleKey>("operations_manager");
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
   const [sendingReset, setSendingReset] = useState(false);
@@ -128,7 +139,7 @@ export default function Roles() {
   const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string; emailSent?: boolean; emailError?: string } | null>(null);
   const [activityCounts, setActivityCounts] = useState<Record<string, { total: number; lastActivity?: string }>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkRole, setBulkRole] = useState<RoleKey>("support");
+  const [bulkRole, setBulkRole] = useState<RoleKey>("operations_manager");
 
   useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
 
@@ -171,6 +182,11 @@ export default function Roles() {
     if (!email.trim() || !email.includes("@")) { toast.error("البريد الإلكتروني غير صحيح"); return; }
     if (email.trim() === user.email) { toast.error("لا يمكنك إضافة نفسك"); return; }
 
+    if (!CREATABLE_ROLES.includes(role)) {
+      toast.error("هذا الدور غير متاح للإنشاء حالياً");
+      return;
+    }
+
     setInviting(true);
     const config = ROLE_CONFIG[role] || FALLBACK_CONFIG;
     const password = generatePassword();
@@ -197,12 +213,13 @@ export default function Roles() {
         return;
       }
 
-      const { error: roleError } = await supabase.from("user_roles").upsert({
-        user_id: user.id, assigned_user_email: email.trim(), role,
-        permissions: JSON.stringify(config.permissions), is_active: true,
-      }, { onConflict: "user_id,assigned_user_email" });
-
-      if (roleError) toast.error("الحساب أُنشئ لكن فشل حفظ الدور: " + roleError.message);
+      // NOTE: The Edge Function already upserts user_roles server-side
+      // (with rollback if role assignment fails). We only need to surface any
+      // reported warning here — no client-side write is needed and would fail
+      // now that RLS restricts writes to the admin JWT anyway.
+      if (inviteData?.roleWarning) {
+        toast.warning("الحساب أُنشئ لكن هناك تحذير في حفظ الدور: " + inviteData.roleWarning);
+      }
 
       setCredentials({
         email: email.trim(), password, role: config.label, name: userName,
@@ -468,15 +485,11 @@ export default function Roles() {
               <label className="mb-1.5 block text-xs font-semibold text-gray-700">الدور</label>
               <select value={role} onChange={(e) => setRole(e.target.value as RoleKey)}
                 className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm focus:border-gold focus:outline-none">
-                <option value="super_admin">مشرف عام / مالك</option>
-                <option value="operations_manager">مدير عمليات</option>
-                <option value="branch_manager">مدير فرع</option>
-                <option value="accountant">محاسب</option>
-                <option value="rep">مندوب مبيعات</option>
-                <option value="marketer">مسوق</option>
-                <option value="support">دعم فني</option>
-                <option value="partner">شريك</option>
+                {CREATABLE_ROLES.map((r) => (
+                  <option key={r} value={r}>{ROLE_CONFIG[r].label}</option>
+                ))}
               </select>
+              <p className="mt-1 text-[10px] text-gray-400">أدوار مندوب/دعم/شريك مغلقة حالياً — تُدار من صفحات مخصصة</p>
             </div>
           </div>
 
@@ -553,14 +566,9 @@ export default function Roles() {
                 <div className="flex items-center gap-1">
                   <select value={bulkRole} onChange={(e) => setBulkRole(e.target.value as RoleKey)}
                     className="rounded-lg bg-white text-navy px-2 py-1.5 text-xs font-bold border-0">
-                    <option value="super_admin">مشرف عام</option>
-                    <option value="operations_manager">مدير عمليات</option>
-                    <option value="branch_manager">مدير فرع</option>
-                    <option value="accountant">محاسب</option>
-                    <option value="rep">مندوب</option>
-                    <option value="marketer">مسوق</option>
-                    <option value="support">دعم فني</option>
-                    <option value="partner">شريك</option>
+                    {CREATABLE_ROLES.map((r) => (
+                      <option key={r} value={r}>{ROLE_CONFIG[r].label}</option>
+                    ))}
                   </select>
                   <button onClick={handleBulkChangeRole}
                     className="rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-blue-600">
