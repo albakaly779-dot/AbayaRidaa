@@ -137,11 +137,15 @@ async function sendCredentialsEmail(
     const { SMTPClient } = await import(
       "https://deno.land/x/denomailer@1.6.0/mod.ts"
     );
+    const smtpPort = parseInt(cfg.smtpPort || "587");
+    // Direct TLS only for SMTPS ports (465/8465). Port 587 relies on STARTTLS negotiated
+    // after EHLO — otherwise the plaintext 220 greeting corrupts the TLS handshake.
+    const useDirectTls = smtpPort === 465 || smtpPort === 8465;
     const client = new SMTPClient({
       connection: {
         hostname: cfg.smtpHost,
-        port: parseInt(cfg.smtpPort || "587"),
-        tls: cfg.smtpUseTls === "true",
+        port: smtpPort,
+        tls: useDirectTls,
         auth: {
           username: cfg.smtpUser,
           password: cfg.smtpPassword || "",

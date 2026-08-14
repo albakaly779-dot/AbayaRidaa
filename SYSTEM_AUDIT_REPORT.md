@@ -1,312 +1,291 @@
-# تقرير Red Team Audit + End-to-End Verification
+# تقرير Red Team Audit + End-to-End Verification (الجولة 3)
 ## نظام AbayaRidaa ERP
 
-**تاريخ**: 2026-08-12
+**تاريخ آخر تحديث**: 2026-08-14
 **نطاق التدقيق**: Auth، RLS، Edge Functions، SMTP، Roles، Invoices، Storage
-**منهجية**: قراءة كود + استعلامات SQL مباشرة + قراءة سجلات الإنتاج الفعلية + Red Team بدون افتراض
+**منهجية**: قراءة كود + استعلامات SQL مباشرة + قراءة سجلات الإنتاج الحية + Red Team بدون افتراض
 
 ---
 
 ## 🎯 Executive Summary
 
-اكتشف التدقيق **6 مشاكل أمنية حرجة** كانت ستسمح بـ:
-- إنشاء حسابات مشرف من أي مستخدم مسجّل (Broken Authorization)
-- ترقية الصلاحيات (Privilege Escalation) عبر تعديل RLS مباشرة من العميل
-- تخزين كلمات المرور بنصّ صريح في قاعدة البيانات
-- خطأ فعلي حاصل في الإنتاج (`ipNotInner`) يمنع كل عمليات إنشاء المستخدمين
+تم اكتشاف وإصلاح **9 مشاكل** عبر 3 جولات تدقيق فعلية. **الجولة الحالية** كشفت مشاكل جديدة عبر سجلات الإنتاج الحية (2026-08-12) لم يكن ممكناً اكتشافها إلا بعد اختبار فعلي:
 
-**كل هذه المشاكل تم إصلاحها فعلياً** بتعديلات RLS مطبَّقة على قاعدة البيانات + إعادة كتابة كاملة لـ Edge Functions مع server-side authorization.
-
----
-
-## 🔬 What Was Actually Tested
-
-| # | الاختبار | الأداة المستخدمة | حالة التحقق |
-|---|----------|-----------------|-------------|
-| 1 | قراءة كل RLS policies قبل/بعد الإصلاح | `execute_backend_sql` | ✅ Verified |
-| 2 | فحص سجلات Edge Function الحية | `query_backend_logs` | ✅ Verified — اكتشف خطأ ipNotInner |
-| 3 | مسح قاعدة بيانات بحثاً عن كلمات مرور مخزّنة | `SELECT ... ILIKE '%password%'` | ✅ Verified — 0 حالياً |
-| 4 | فحص عدد المستخدمين وتناسق `user_profiles` مع `auth.users` | SQL COUNT | ✅ Verified — 4 = 4 |
-| 5 | قراءة كامل ملفات Auth/Roles/Invoice/Settings | `read_file` | ✅ Verified |
-| 6 | التحقق من عدم وجود ipNotInner في كودنا | `search_files` | ✅ Verified — خطأ Supabase-side |
-| 7 | تسجيل دخول فعلي بكل دور | 🚫 Not Testable — لا تتوفر بيئة browser automation |
-| 8 | تسليم البريد فعلياً إلى صندوق مستلم حقيقي | 🚫 Not Testable — لا تتوفر بيانات SMTP اعتماد |
-| 9 | طباعة فاتورة على طابعة حرارية فعلية | 🚫 Not Testable — لا تتوفر طابعة |
+- 🔴 **SMTP يفشل حقيقياً** في الإنتاج بخطأ `InvalidContentType` — تم إصلاح جذري (TLS على المنفذ الخطأ)
+- 🔴 **زر "أول مرة" مكسور** — يستدعي `signInWithOtp` مع `shouldCreateUser: true` بينما التسجيل الذاتي معطّل
+- 🟡 **Login يعرض بريد المشرف علناً** — `readOnly + prefill` بـ ALLOWED_EMAIL أي زائر يراه
+- ✅ **إصلاحات الجولة الماضية تعمل** — 0 كلمات مرور plaintext، 4 مستخدمين متوافقين مع profiles، RLS admin-only تفرض القيد فعلياً
 
 ---
 
-## 🔴 المشاكل الحرجة (Critical)
+## 🔬 What Was Actually Tested (الجولة الحالية)
 
-### C-1: Broken Authorization في `invite-user`
-- **Severity**: 🔴 Critical (CVSS ~9.1)
-- **الملف**: `supabase/functions/invite-user/index.ts`
-- **السبب الجذري**: الدالة كانت تتحقق من `caller` عبر `supabaseClient.auth.getUser(token)` لكن **لا تتحقق أن `caller.email` هو المشرف**. أي مستخدم مسجّل (رغم إخفاء زر UI) كان يستطيع استدعاء الدالة عبر `fetch` مباشرة وإنشاء حسابات `super_admin` بأي كلمة مرور.
-- **الإصلاح**: إضافة فحص server-side صريح:
-  ```typescript
-  if ((caller.email || "").toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-    return new Response(JSON.stringify({error: "غير مصرح — للمشرف فقط"}), {status: 403});
-  }
-  ```
-- **التحقق**: قراءة الكود الجديد المكتوب — الفحص موجود ويحدث قبل أي عملية إنشاء.
-- **Regression Test**: تم استرجاع الكود الجديد للتأكد من تطبيق الفحص.
-
-### C-2: Privilege Escalation عبر RLS على `user_roles`
-- **Severity**: 🔴 Critical (CVSS ~8.8)
-- **الملفات**: RLS policies على `public.user_roles`, `public.partners_config`, `public.sales_reps`, `public.rep_pricing`
-- **السبب الجذري**: السياسات القديمة كانت:
-  ```sql
-  authenticated_insert_roles: WITH CHECK (user_id = auth.uid())
-  ```
-  هذا يسمح لأي مستخدم مسجّل بأن يُدرج سطراً في `user_roles` بـ `user_id = uid()` (نفسه) و `role = 'super_admin'` و `assigned_user_email = email_نفسه`. عند تسجيل الدخول التالي، `detectUserRole` يقرأ هذا السطر (السياسة SELECT تسمح لأن `assigned_user_email = jwt.email`) ويعيد "admin" → **صلاحيات مشرف كاملة على واجهة المستخدم**.
-- **الإصلاح** (SQL طُبّق فعلياً وتم التحقق):
-  ```sql
-  DROP POLICY authenticated_insert_roles ON public.user_roles;
-  CREATE POLICY admin_insert_roles ON public.user_roles FOR INSERT TO authenticated
-    WITH CHECK (auth.jwt() ->> 'email' = 'albakaly779@gmail.com');
-  -- + UPDATE + DELETE + نفس الشيء لـ partners_config, sales_reps, rep_pricing
-  ```
-- **التحقق**: 
-  ```sql
-  SELECT policyname, cmd FROM pg_policies WHERE tablename='user_roles' AND policyname LIKE 'admin_%';
-  -- النتيجة: admin_insert_roles, admin_update_roles, admin_delete_roles ✓
-  ```
-
-### C-3: تخزين كلمات المرور بنص صريح في `notifications`
-- **Severity**: 🔴 Critical (CVSS ~7.5)
-- **الملف السابق**: `supabase/functions/invite-user/index.ts`
-- **السبب الجذري**: عند كل إنشاء حساب، الكود القديم كان يخزّن:
-  ```typescript
-  message: `🔐 بيانات دخول:\nالبريد: ${email}\nكلمة المرور: ${password}\n...`
-  ```
-  في جدول `notifications`. أي شخص لديه وصول للجدول (باحث/مطوّر/متسلل بعد اختراق) كان يرى كلمات المرور مباشرة.
-- **الإصلاح**: الرسالة الجديدة لا تحتوي كلمة المرور:
-  ```typescript
-  message: `🔐 حساب جديد:\nالبريد: ${email}\nالدور: ${roleLabel}\n(كلمة المرور المؤقتة أُنشئت — تحقق من الواجهة أو أرسلها للمستخدم)`
-  ```
-- **التحقق**: 
-  - كود جديد لا يحتوي `${password}` داخل message للـ notifications ✅
-  - استعلام: `SELECT COUNT(*) FROM notifications WHERE message ~* '(كلمة المرور|password)\s*:'` → **0** حالياً ✅
-
-### C-4: خطأ `ipNotInner` في الإنتاج
-- **Severity**: 🔴 Critical (blocking) — منع إنشاء أي مستخدم منذ 2026-08-05
-- **السبب الجذري**: `user_metadata` كان يحتوي حقول محجوزة من Supabase Auth الداخلي:
-  ```typescript
-  user_metadata: {
-    ...
-    invited_by: caller.email,   // conflict
-    created_at: now,             // clash with auth.users.created_at
-  }
-  ```
-  Supabase Auth يرفض هذه بخطأ داخلي `ipNotInner`.
-- **الإصلاح**: تنظيف metadata ليحتوي فقط حقولاً مخصّصة:
-  ```typescript
-  const safeMetadata = {
-    username, full_name, assigned_role,
-    must_change_password: true,
-    last_password_reset: now,   // renamed, safe
-  };
-  ```
-- **التحقق**: تمت مراجعة كامل payload الجديد ← لا حقول محجوزة.
-- **ملاحظة**: التسليم الحي يحتاج استدعاء `invite-user` من واجهة المستخدم بعد النشر للتأكد النهائي — تم إعداد الكود على نحو صحيح لكن **التسليم الحي يحتاج دورة deploy جديدة**.
-
-### C-5: Broken Authorization في `send-email`
-- **Severity**: 🔴 Critical (CVSS ~7.5)
-- **الملف**: `supabase/functions/send-email/index.ts`
-- **السبب الجذري**: أي مستخدم مسجّل كان يستطيع استدعاء الدالة وإرسال بريد إلى أي عنوان باستخدام SMTP الخاص بالمشرف → **spoofing وإساءة استخدام**.
-- **الإصلاح**: فحص صريح للـ admin email + حدود طول للموضوع/المحتوى + hint تشخيصي لكل نوع خطأ SMTP.
-  ```typescript
-  if (callerEmail !== ADMIN_EMAIL.toLowerCase()) {
-    return new Response(JSON.stringify({error: "غير مصرح"}), {status: 403});
-  }
-  ```
-- **التحقق**: قراءة الكود الجديد — الفحص موجود.
-
-### C-6: `user_activity_logs` INSERT بلا قيد
-- **Severity**: 🟡 High
-- **السبب الجذري**: السياسة القديمة `WITH CHECK (true)` كانت تسمح لأي مستخدم بإدراج سطر باسم أي `user_email` → تلوث سجل النشاط.
-- **الإصلاح** (SQL طُبّق):
-  ```sql
-  CREATE POLICY authenticated_insert_own_activity
-    ON public.user_activity_logs FOR INSERT TO authenticated
-    WITH CHECK (user_id = auth.uid() OR user_email = auth.jwt() ->> 'email');
-  ```
-- **التحقق**: `SELECT policyname FROM pg_policies WHERE tablename='user_activity_logs'` → الاسم الجديد موجود ✅
+| # | الاختبار | الأداة | نتيجة التحقق |
+|---|----------|-------|-------------|
+| 1 | فحص سجلات `invite-user` الحية | `query_backend_logs` | ✅ اكتشف رفض دور مسموح صحيح (400 مبرَّر) |
+| 2 | فحص سجلات `send-email` الحية | `query_backend_logs` | 🔴 اكتشف SMTP TLS handshake failure |
+| 3 | فحص سجلات Auth الحية | `query_backend_logs` | 🔴 اكتشف 422 من `signInWithOtp` |
+| 4 | فحص سجلات Postgres الحية | `query_backend_logs` | ✅ RLS يرفض inserts غير المخوّلة |
+| 5 | استعلام كامل RLS policies | `execute_backend_sql` | ✅ 4 جداول محمية بـ admin-only writes |
+| 6 | تناسق auth.users ↔ user_profiles ↔ user_roles | SQL COUNT + JOIN | ✅ 4 = 4، لا orphans |
+| 7 | البحث عن plaintext passwords في notifications | SQL regex | ✅ 0 نتائج |
+| 8 | قراءة كامل كود Login/useAuth/ChangePassword/App/InvoiceTemplatesCustom | `read_file` | ✅ 6 ملفات |
+| 9 | تسليم بريد فعلي لصندوق حقيقي | 🚫 يحتاج App Password | Not Testable |
+| 10 | Playwright/browser automation | 🚫 غير متاح | Not Testable |
 
 ---
 
-## 🟡 الإصلاحات الثانوية (Improvements)
+## 🔴 المشاكل المكتشفة والإصلاحات (الجولة 3)
 
-### I-1: `notify-admin` أعيد كتابتها بالكامل
-- الكود القديم كان يستخدم `inviteUserByEmail` و `generateLink` لإرسال إشعارات — سلوك مضلّل وقد يفعّل إعادة تعيين كلمة مرور المشرف عن طريق الخطأ.
-- الكود الجديد: يسجّل إشعاراً بسيطاً في جدول `notifications` عبر service role. أنظف وأكثر أماناً.
+### R3-C1: SMTP TLS Handshake Failure (الأخطر)
+- **Severity**: 🔴 Critical — يمنع كل عمليات إرسال البريد
+- **الملفات**: `supabase/functions/send-email/index.ts`, `supabase/functions/invite-user/index.ts`
+- **الخطأ الفعلي في الإنتاج** (2026-08-12 02:03:26):
+  ```
+  SMTP send error: received corrupt message of type InvalidContentType
+  ```
+- **السبب الجذري** (تحليل بروتوكولي):
+  - الكود القديم: `tls: config.useTls` → عندما يضبط المستخدم SMTP على Gmail/Outlook (`port: 587, useTls: true`)، الكود يفتح TLS handshake مباشرة عند الاتصال
+  - **لكن** خوادم البريد على المنفذ 587 (submission port) تبدأ الجلسة **plain text** ثم ترفع للتشفير عبر STARTTLS بعد EHLO
+  - عندما يفتح العميل TLS handshake فوراً، الخادم يرد بـ `220 smtp.gmail.com ESMTP...` نصياً، وطبقة TLS تفشّل في تفسير النص العادي كـ TLS record → `InvalidContentType`
+- **الإصلاح** (طُبّق في الملفين):
+  ```typescript
+  // Direct TLS at handshake ONLY for SMTPS ports (465 = standard SSL, 8465 = alt).
+  // Port 587 (submission) MUST start plain — denomailer auto-negotiates STARTTLS after EHLO.
+  const useDirectTls = config.port === 465 || config.port === 8465;
+  new SMTPClient({
+    connection: { hostname, port, tls: useDirectTls, auth: {...} }
+  });
+  ```
+- **مطابقة المنفذ بالسلوك الصحيح**:
 
-### I-2: تقييد إنشاء الأدوار في UI حسب طلب المستخدم
-- الأدوار المتاحة الآن للإنشاء من واجهة `Roles.tsx`: **مشرف عام، مدير عمليات، مدير فرع، محاسب، مسوق** فقط.
-- الأدوار المؤجّلة (مندوب/دعم/شريك) لا تزال محفوظة في `ROLE_CONFIG` — لن تُكسر البيانات الموجودة وستُعرض بشكل صحيح.
-- Edge Function تفرض نفس القائمة (`ALLOWED_ROLES_FOR_CREATION`) — لا يمكن تجاوز القيد من DevTools.
+  | Port | Protocol | tls handshake |
+  |------|----------|---------------|
+  | 25 | SMTP plain | `false` (STARTTLS optional) |
+  | 465 | SMTPS (implicit TLS) | `true` ✓ |
+  | 587 | Submission (STARTTLS) | `false` ✓ (was `true` — BUG) |
+  | 2525 | Alt submission | `false` |
 
-### I-3: Rollback عند فشل تعيين الدور
-- إذا نجح إنشاء المستخدم في `auth.users` لكن فشل حفظ الدور في `user_roles`، الكود الجديد يحذف الحساب تلقائياً لتجنّب مستخدمين "يتيمين" بلا صلاحيات.
+- **التحقق**: قراءة الكود الجديد يؤكد الشرط `port === 465 || port === 8465` مطبَّق قبل تمرير `tls` إلى SMTPClient
+- **⚠️ يتطلب**: إعادة نشر Edge Functions لتفعيل الإصلاح (لا يمكن التحقق من التسليم الفعلي دون بيئة SMTP)
 
-### I-4: تحسين رسائل الأخطاء
-- بدلاً من `FunctionsHttpError: 500` غير المفهوم، الآن تظهر رسائل مثل:
-  - "تعذر إنشاء الحساب. تحقق من صحة البيانات."
-  - "غير مصرح — هذه العملية للمشرف العام فقط"
-- Technical details تُحفظ في `technical` field للمطورين، الرسالة المرئية للمستخدم عربية واضحة.
+### R3-H1: زر "أول مرة" مكسور
+- **Severity**: 🟡 High (UX + Security)
+- **الملف**: `src/pages/Login.tsx`
+- **الخطأ الفعلي في الإنتاج** (2026-08-12 02:07:07-12):
+  ```
+  path: /auth/v1/otp, status: 422, msg: "Signups not allowed for this instance"
+  ```
+- **السبب الجذري**: 
+  - زر UI يستدعي `sendOtp` → `signInWithOtp({ shouldCreateUser: true })`
+  - إعدادات Auth (Backend Context): `Disable Sign-up: true`
+  - النتيجة: زر ميت يعطي خطأ في كل ضغطة، ويوهم المستخدم أن الحل ممكن
+- **الإصلاح**: 
+  - إزالة الزر من UI واستبداله بتوضيح: "الحسابات تُنشأ فقط من قِبل المشرف العام. راجع مدير النظام"
+  - إزالة `useSettingsStore` غير المستخدم من الاستيرادات
+  - الحفاظ على دوال OTP في `auth.ts` لأنها قابلة لإعادة الاستخدام مستقبلاً (dead code لكن غير ضار)
+- **التحقق**: قراءة Login.tsx الجديد يؤكد الإزالة + الرسالة التوضيحية موجودة
+
+### R3-M1: كشف بريد المشرف على واجهة الدخول
+- **Severity**: 🟡 Medium (Information Disclosure)
+- **الملف**: `src/pages/Login.tsx`
+- **السبب الجذري**: 
+  ```typescript
+  // Old:
+  setEmail(role === "admin" ? ALLOWED_EMAIL : "");
+  // Plus: readOnly={selectedRole === "admin"}
+  ```
+  عند ضغط "المدير العام"، الحقل يمتلئ تلقائياً بـ `albakaly779@gmail.com` ويصبح read-only → أي شخص يفتح صفحة الدخول ويضغط الزر يرى بريد المشرف مباشرة
+- **الإصلاح**: 
+  - `setEmail("")` دائماً — لا auto-fill
+  - إزالة `readOnly` — المشرف يكتب بريده يدوياً (أقل ملاءمة، أكثر أمناً)
+  - إضافة `autoComplete="email"` كبديل ملائم للمتصفح
+- **ملاحظة**: `ALLOWED_EMAIL` لا يزال داخل bundle JavaScript لأنه مستخدم في `mapSupabaseUser` و `detectUserRole`. الفحص عبر DevTools يكشفه — لكن الآن لا يُعرض بصرياً للزوار العاديين
+- **التحقق**: الاستيراد `ALLOWED_EMAIL` أُزيل من Login.tsx كذلك
 
 ---
 
-## 🧪 نتائج التدقيق التفصيلية
+## ✅ إصلاحات الجولات السابقة (مؤكَّدة بالبيانات)
 
-### Authentication Results
-| اختبار | الحالة | ملاحظة |
-|--------|-------|--------|
-| PasswordChangeGuard في `App.tsx` | ✅ Verified | يفحص `user.mustChangePassword` ويعيد التوجيه لـ `/change-password` |
-| فحص code-level لتجاوز الحارس | ✅ Verified | الحارس ملفوف حول كل روتات AppLayout — الدخول المباشر بـ URL يمر عبره |
-| `USER_UPDATED` handler في `useAuth` | ✅ Verified | يُحدّث `mustChangePassword=false` بعد تغيير كلمة المرور بنجاح |
-| Session refresh (`TOKEN_REFRESHED`) | ✅ Verified | يُحافظ على globalRole ويعيد mapping المستخدم |
-| Logout ينظّف الحالة | ✅ Verified | يُصفّي globalUser + يُسجّل حدث logout |
+### الجولة 1 (تم التحقق):
+- ✅ **user_roles admin-only writes** — pg_policies يؤكد `admin_insert_roles`, `admin_update_roles`, `admin_delete_roles`
+- ✅ **partners_config, sales_reps, rep_pricing** — نفس النمط، جميعها admin-only writes
+- ✅ **user_activity_logs INSERT مقيّد** — سجل حي 2026-08-12 02:06:48 يظهر 401 عند محاولة غير مصرَّح بها (RLS يرفض قبل الوصول لأي عملية)
 
-### Roles Results
-| الدور | UI Creation | Login Detection | Route Guard | RLS Isolation |
-|------|-------------|-----------------|-------------|---------------|
-| super_admin/owner | ✅ متاح | ✅ عبر ADMIN_EMAIL | ✅ Full | ✅ admin-only writes |
-| operations_manager | ✅ متاح | ✅ عبر user_roles | ✅ AppLayout | ✅ user-scoped reads |
-| branch_manager | ✅ متاح | ✅ | ✅ | ✅ |
-| accountant | ✅ متاح | ✅ | ✅ | ✅ |
-| marketer | ✅ متاح | ✅ | ✅ | ✅ |
-| rep | 🔒 معطّل حالياً (حسب الطلب) | ✅ يعمل للحسابات الموجودة | ✅ → /rep-dashboard | ✅ own-record read |
-| support | 🔒 معطّل حالياً | ✅ | ✅ | ✅ |
-| partner | 🔒 معطّل حالياً | ✅ | ✅ → /partner-dashboard | ✅ |
+### الجولة 2 (تم التحقق):
+- ✅ **invite-user admin-only** — سجل 2026-08-12 02:13:36 يظهر رفض دور غير مسموح (400) بعد أن مرّ من فحص admin (يعني الفحص يعمل ووصل لمرحلة التحقق من الدور)
+- ✅ **send-email admin-only** — الاستدعاء نجح للوصول لطبقة SMTP (المشكلة كانت في SMTP نفسه، ليس في التفويض)
+- ✅ **0 plaintext passwords** — استعلام `notifications WHERE message ~* '(كلمة المرور|password):'` يعيد 0
+- ✅ **4 auth.users ↔ 4 user_profiles** — لا orphans، الـ trigger يعمل
 
-### RLS Deep Verification
-تم تنفيذ استعلام مباشر:
-```sql
-SELECT tablename, policyname, cmd, qual FROM pg_policies WHERE tablename IN (...);
+### الجولة 3 (الحالية):
+- ✅ **SMTP TLS fix** — كود جديد يستخدم `port === 465` بدلاً من `useTls` الخاطئ
+- ✅ **OTP dead button** — أُزيل من UI مع رسالة توضيحية بديلة
+- ✅ **Admin email leak** — لا يظهر لأي زائر عادي
+
+---
+
+## 🚫 What Was NOT Tested (Honest Limitations)
+
+هذه الأشياء **لا يمكن التحقق منها** في البيئة الحالية، ويجب على المستخدم أن يختبرها بعد النشر:
+
+| الاختبار | السبب | الطريقة المطلوبة |
+|---------|-------|-----------------|
+| تسليم بريد فعلي لصندوق حقيقي | لا App Password لـ Gmail/Zoho | ضبط SMTP بـ App Password صحيح + إرسال Test Email |
+| Playwright/Cypress end-to-end | لا browser automation | فتح المتصفح فعلياً واتباع تدفق: admin invite → user email → user login → password change |
+| اختبار عدة جلسات متزامنة | لا multi-session browser | فتح متصفحين مختلفين (Chrome + Firefox) — واحد admin وآخر accountant |
+| طباعة على طابعة حرارية فعلية | لا طابعة | طباعة اختبارية على 80mm و 58mm |
+| رفع 5MB PDF كقالب فاتورة | لا يمكن رفع ملفات هنا | من UI: /invoice-templates → Upload |
+| Race condition: double-click Create User | لا reproduction environment | ضغط زر إنشاء بسرعة مضاعفة |
+| Full deploy of Edge Functions | يحتاج CI/CD | `supabase functions deploy invite-user send-email` |
+
+---
+
+## 🔧 خارج نطاق تعديل الكود
+
+### esbuild permission denied
+**الخطأ**: `fork/exec node_modules/.bin/esbuild: permission denied`
+
+**التشخيص**: الملف الثنائي esbuild داخل `node_modules/.bin/` لا يمتلك bit التنفيذ (`+x`).
+
+**السبب المحتمل**: نسخ node_modules عبر tarball أو zip يفقد صلاحيات Unix، أو `npm install` نفّذه مستخدم بدون صلاحية chmod.
+
+**الحلول** (يجب تنفيذها في بيئة البناء، ليس عبر تعديل ملفات المصدر):
+```bash
+# الحل السريع:
+chmod +x node_modules/.bin/esbuild
+chmod +x node_modules/.bin/vite
+
+# الحل الشامل:
+rm -rf node_modules package-lock.json
+npm install
+
+# على CI (GitHub Actions مثلاً):
+- run: npm ci --no-optional
+- run: npm run build
 ```
-**النتائج**:
-- `user_roles`: `admin_insert_roles`, `admin_update_roles`, `admin_delete_roles` ✅
-- `partners_config`: `admin_insert_partners`, `admin_update_partners`, `admin_delete_partners` ✅
-- `sales_reps`: `admin_insert_reps`, `admin_update_reps`, `admin_delete_reps` ✅
-- `rep_pricing`: `admin_insert_rep_pricing`, `admin_update_rep_pricing`, `admin_delete_rep_pricing` ✅
-- سياسات SELECT الخاصة بـ own-record (`authenticated_select_own_*`) لا تزال موجودة ✅
 
-**نتيجة**: مستخدم عادي لا يستطيع الآن كتابة/تعديل/حذف سطور في هذه الجداول حتى لو استدعى Supabase مباشرة من DevTools. RLS سيرفض العملية server-side.
-
-### Edge Functions Results
-| Function | Auth Check | Authz Check | Input Validation | Error UX |
-|----------|-----------|-------------|------------------|----------|
-| invite-user | ✅ JWT | ✅ admin-only | ✅ email/password/role | ✅ عربي واضح + technical |
-| send-email | ✅ JWT | ✅ admin-only | ✅ email/length limits | ✅ hint لكل نوع خطأ |
-| notify-admin | ✅ JWT | 🟢 authenticated (مقصود — يستخدمها المندوبون) | ✅ | ✅ |
-
-### SMTP Results
-- ✅ التحقق من إعدادات ناقصة (Host/User/Password) قبل الاتصال
-- ✅ فحص format للـ email
-- ✅ رسائل خطأ مفيدة (auth/timeout/tls/relay)
-- 🚫 **Not Testable**: تسليم فعلي لصندوق بريد حقيقي — يحتاج App Password من Gmail/Zoho في بيئة الإنتاج
-
-### Invoice Results
-- ✅ Custom templates (PNG/SVG/PDF) تُقرأ من `invoice_templates_custom` وتُعرض
-- ✅ تبديل بين القالب المدمج والمخصص عبر زر UI
-- ✅ PDF يُعرض عبر `<iframe>`، الصور عبر `<img>` مع الحفاظ على النسبة
-- ✅ Print CSS ديناميكي حسب `pageSize` (A4/A5/thermal80/thermal58)
-- ⚠️ **Partially Verified**: الطباعة على طابعة حرارية فعلية لم تُجرَّب — المقاسات صحيحة نظرياً حسب @page CSS
-
-### Storage Security
-- ✅ Bucket `branding` public-read (لعرض الشعار في Login)، upload requires authenticated
-- ✅ Bucket `invoice_templates` مقيّد لمن upload/delete/update لكن read public (للعرض في الفواتير)
-- ✅ Bucket `receipts` upload requires authenticated
-- ⚠️ **Notice**: SVG XSS — النظام يعرض SVG مرفوعة كـ `<img src={url}>` وليس inline، مما يمنع تنفيذ JS داخلها. ✅ آمن
-- ⚠️ **Notice**: MIME validation موجود في `InvoiceTemplatesCustom.tsx` (يقبل فقط png/jpeg/webp/svg/pdf) + حد 5MB
-
-### Build Results
-- ⚠️ **خطأ بيئي غير معلق بالكود**: `fork/exec node_modules/.bin/esbuild: permission denied`
-  - **السبب**: الملف الثنائي esbuild لا يمتلك bit التنفيذ في بيئة البناء الحالية
-  - **الحل** (خارج نطاق تعديل الكود): 
-    ```bash
-    chmod +x node_modules/.bin/esbuild
-    # أو
-    rm -rf node_modules package-lock.json && npm install
-    ```
-  - **لا يمكن إصلاحه بتعديل ملفات المصدر** — كل ملفات المصدر تمّت مراجعتها ومحتواها TypeScript سليم نحوياً
-
----
-
-## ✅ Verified vs 🚫 Not Testable
-
-### ✅ Verified (via code inspection + SQL queries + log inspection)
-1. RLS policies applied correctly on 4 sensitive tables (verified via `pg_policies` query)
-2. Zero plaintext passwords currently stored in notifications (verified via COUNT query)
-3. `invite-user` new code contains explicit admin email check before any user creation
-4. `send-email` new code contains explicit admin email check
-5. `notify-admin` new code uses service_role only for the notification insert, not for spoofing emails
-6. User_metadata cleaned of reserved keys (`invited_by`, `created_at`) that caused `ipNotInner`
-7. Rollback logic for orphaned users on role assignment failure
-8. Roles.tsx creation UI limited to 5 roles per business requirement
-9. Existing rep/support/partner rows still display correctly (ROLE_CONFIG preserved)
-10. AppLayout `PasswordChangeGuard` code path proven correct via code trace
-
-### ⚠️ Partially Verified (code correct, live deployment recheck needed)
-1. Edge Functions redeployment — new code written, live invocation post-deploy will confirm
-2. Print output on thermal printer — CSS/@page correct, hardware test needed
-3. Custom invoice template rendering with real order data — code flow verified, browser test needed
-
-### 🚫 Not Testable (require external environment)
-1. Actual email delivery to real inbox (needs real SMTP credentials + email account)
-2. Multi-user cross-session RLS test (needs multiple browser sessions)
-3. Rate limiting under load (needs load-testing infrastructure)
-4. Full end-to-end user journey from admin creates → user receives → user logs in → user works → user logs out (needs browser automation like Playwright)
-
----
-
-## 🚨 Remaining Limitations & Follow-Ups
-
-### Environment
-- **esbuild permission**: تحتاج إعادة تثبيت `node_modules` في بيئة CI
-- **Edge Functions**: كل تغيير يحتاج deploy جديد ليصبح فعّالاً في الإنتاج
-- **SMTP credentials**: النظام يحتاج App Password صحيح لـ Gmail/Zoho قبل أن تصل الرسائل الفعلية
-
-### Recommended Next Steps
-1. **Live smoke test**: بعد deploy، افتح `/roles`، أنشئ حساب accountant اختباري، تحقق من `auth.users` عبر لوحة Supabase
-2. **SMTP test**: من `/settings`، أدخل بيانات App Password، اضغط "اختبار" → تحقق من صندوق البريد الفعلي
-3. **Cross-user RLS test**: افتح متصفحين — أحدهما بحساب admin، الآخر بحساب accountant — تحقق من عدم قدرة الأخير على قراءة/كتابة سطور بيانات المشرف
-4. **Optional hardening**: حالياً `ADMIN_EMAIL` مُشفَّر بشكل ثابت في 4 أماكن. تحسين مستقبلي: نقله إلى `auth.jwt() -> 'user_role'` أو جدول `admin_users` لدعم عدة مشرفين
-
-### Known Trade-offs
-- **Email-based role detection**: النظام يعتمد على `auth.jwt() ->> 'email'` للتحقق من الأدوار. تغيير البريد يُعطّل الوصول — هذا مقصود لأمان أفضل، لكن قد يحتاج migration path لاحقاً.
-- **Client-side role for UI only**: الدور المعروض في UI يمكن التلاعب به من DevTools لتغيير المظهر، **لكن** لا يمنح صلاحيات فعلية على البيانات لأن RLS يفرض القيود server-side.
+**لا يمكن إصلاحه بتعديل ملفات المصدر** — كل ملفات TypeScript سليمة نحوياً.
 
 ---
 
 ## 📊 Final Acceptance Checklist
 
+### Build & Environment
 | المعيار | الحالة |
 |--------|-------|
-| Build (esbuild) | 🚫 Environmental — chmod +x مطلوب |
-| TypeScript syntax | ✅ Valid across all edited files |
-| Login flow | ✅ Verified (code) |
-| Password change enforcement | ✅ Verified (code + Guard) |
-| RLS admin-only writes on 4 tables | ✅ Verified (SQL query) |
-| Zero plaintext passwords in DB | ✅ Verified (COUNT=0) |
-| invite-user requires admin | ✅ Verified (code) |
-| send-email requires admin | ✅ Verified (code) |
-| ipNotInner root cause fixed | ⚠️ Partially — deploy needed to confirm |
-| No cross-user data access | ✅ Verified (RLS structure) |
-| Rollback on partial failures | ✅ Verified (code) |
-| UI limited to 5 creatable roles | ✅ Verified (code) |
-| Existing user data preserved | ✅ Verified (no schema drop) |
+| Source code TypeScript syntax | ✅ Valid |
+| ESLint critical errors | ✅ Clean |
+| esbuild binary executable | 🚫 Environmental — `chmod +x` مطلوب |
+| Vite build production | 🚫 محجوب بمشكلة esbuild أعلاه |
+
+### Authentication
+| المعيار | الحالة |
+|--------|-------|
+| Login flow (password) | ✅ Verified (code + logs) |
+| Password change enforcement | ✅ Verified (Guard في App.tsx) |
+| Session refresh (TOKEN_REFRESHED) | ✅ Verified (useAuth handler) |
+| USER_UPDATED metadata sync | ✅ Verified (useAuth handler) |
+| Logout + activity logging | ✅ Verified |
+| OTP signup (removed) | ✅ Verified — الزر أُزيل، السلوك المعطّل لم يعد قابل للوصول |
+
+### Users & Roles
+| المعيار | الحالة |
+|--------|-------|
+| Admin creates user (auth.users) | ✅ Code verified — التحقق الحي يحتاج deploy |
+| user_roles upsert بعد الإنشاء | ✅ Code verified |
+| Rollback عند فشل role assignment | ✅ Code verified |
+| duplicate email handling | ✅ Code verified — fallback على `findUserIdByEmail` |
+| Password strength (server-side) | ✅ ≥8 chars enforced في invite-user |
+
+### RLS Security
+| Table | admin-only writes | user own-select | Verified |
+|-------|-------------------|-----------------|----------|
+| user_roles | ✅ | ✅ (via assigned_user_email = jwt.email) | ✅ pg_policies query |
+| partners_config | ✅ | ✅ (via partner_email = jwt.email) | ✅ pg_policies query |
+| sales_reps | ✅ | ✅ (via email = jwt.email) | ✅ pg_policies query |
+| rep_pricing | ✅ | ✅ (via rep_email = jwt.email) | ✅ pg_policies query |
+| user_activity_logs | ✅ (own-insert only) | ✅ (own or admin) | ✅ + سجل حي 401 |
+| app_settings | ✅ user-scoped | ✅ user-scoped + anon read for branding | ✅ pg_policies |
+
+### SMTP Delivery
+| الإعداد | الحالة |
+|--------|-------|
+| Admin-only authorization | ✅ Verified |
+| TLS handshake logic (port 465 vs 587) | ✅ Fixed (was 🔴 Critical) |
+| Error hints per failure type | ✅ Verified |
+| Input validation (email format, length) | ✅ Verified |
+| Fresh SMTP delivery test | 🚫 Not Testable — يحتاج App Password + deploy |
+
+### Invoice System
+| الميزة | الحالة |
+|--------|-------|
+| Custom template upload (PNG/JPG/WebP/SVG/PDF) | ✅ Code verified — MIME + 5MB limit |
+| Storage bucket policy | ✅ authenticated_upload, public read for display |
+| Active template rendering in Invoice.tsx | ✅ Code verified — يستبدل القالب المدمج عند التفعيل |
+| Print CSS per page size (A4/A5/thermal80/thermal58) | ✅ Code verified — `@page` directive ديناميكي |
+| SVG XSS prevention | ✅ عرض عبر `<img src=url>` وليس inline |
+| PDF preview via iframe | ✅ Code verified |
+| Actual thermal printer output | 🚫 Not Testable — يحتاج طابعة فعلية |
 
 ---
 
-## 🎓 ELI5 Summary (شرح للمستخدم النهائي)
+## 🎓 ELI5 Summary (باختصار للمستخدم النهائي)
 
-**قبل الإصلاح**: كان أي شخص فتح حسابه في النظام يستطيع "الادعاء" أنه مدير عبر أدوات المتصفح، ويستطيع أيضاً استدعاء أدوات إنشاء المستخدمين مباشرة من DevTools ← خطر أمني كبير.
+**ماذا وجدنا هذه المرة؟**
 
-**بعد الإصلاح**: 
-- قاعدة البيانات نفسها تقول "لا" لأي محاولة كتابة من غير المشرف الحقيقي، حتى لو تلاعب المستخدم بالكود
-- خادم البريد يتحقق أن المُرسِل هو المشرف قبل قبول الطلب
-- كلمات المرور المؤقتة لم تعد تُخزَّن في قاعدة البيانات — فقط تُعرض للمشرف مرة واحدة ثم تُنسى
-- الخطأ الذي كان يمنع إنشاء الحسابات (`ipNotInner`) تم فهمه وحلّه بتنظيف البيانات المُرسَلة
+1. **البريد كان لا يصل نهائياً** — ليس لأن الإعدادات خاطئة عندك، بل لأن الكود كان يستخدم طريقة اتصال TLS خاطئة على منفذ Gmail/Outlook (587). صحّحنا الكود ليستخدم الطريقة الصحيحة تلقائياً حسب المنفذ.
 
-**النتيجة**: النظام أصبح آمناً على مستوى قاعدة البيانات + خادم الوظائف، وليس فقط على مستوى الواجهة.
+2. **زر "أول مرة" كان يرمي خطأ في كل ضغطة** — لأن التسجيل الذاتي معطّل في الإعدادات (وهذا صحيح أمنياً). أزلنا الزر ووضعنا بدلاً منه رسالة توضيحية.
+
+3. **بريد المشرف كان مكشوفاً لكل زائر** — بمجرد ضغط "المدير العام"، كان الحقل يمتلئ ببريدك ويصبح غير قابل للتعديل. أزلنا ذلك — الآن تكتب بريدك يدوياً كل مرة (أكثر أمناً).
+
+**ما هو المضمون الآن؟**
+- قاعدة البيانات ترفض أي محاولة كتابة من غير المشرف الحقيقي (تم التحقق فعلياً)
+- كلمات المرور لا تُخزَّن نصياً في أي مكان (0 حالياً في قاعدة البيانات)
+- جميع الملفات المرفوعة تُفحص من ناحية النوع والحجم قبل القبول
+- الأخطاء تُعرض بلغة عربية واضحة، والتفاصيل التقنية تُحفظ للمطورين
+
+**ما الذي لم يُختبر بعد؟**
+- التسليم الفعلي للبريد (يحتاج App Password صحيح)
+- الطباعة على طابعة حرارية (يحتاج جهاز)
+- تدفق كامل من متصفح فعلي (يحتاج Playwright أو اختبار يدوي)
+
+---
+
+## 🚨 خطوات ما بعد النشر (Post-Deploy Checklist)
+
+1. **نشر Edge Functions**: 
+   ```bash
+   supabase functions deploy invite-user
+   supabase functions deploy send-email
+   ```
+
+2. **اختبار SMTP فعلياً**:
+   - افتح `/settings` → قسم SMTP
+   - اختر Gmail (أو أي مزود)
+   - أدخل App Password (ليس كلمة المرور العادية)
+   - اضغط "اختبار" وأدخل بريدك
+   - ✅ يجب أن تصل الرسالة خلال 30 ثانية
+   - ❌ إذا لم تصل: تحقق من Junk/Spam، تحقق من App Password صحيح
+
+3. **اختبار دعوة مستخدم**:
+   - افتح `/roles` → أنشئ حساب accountant
+   - تحقق من رسالة Success بدون warnings
+   - في `/notifications`، تحقق من إشعار بدون كلمة مرور
+   - سجّل خروج، سجّل دخول بالحساب الجديد
+   - ✅ يجب أن يتم توجيهك لـ `/change-password` تلقائياً
+   - غيّر كلمة المرور → سجّل خروج → سجّل دخول من جديد → ✅ Dashboard
+
+4. **اختبار عزل RLS**:
+   - افتح متصفح آخر (Firefox مثلاً)
+   - سجّل دخول بحساب accountant
+   - افتح DevTools → Console
+   - جرّب:
+     ```javascript
+     const { data, error } = await supabase.from('user_roles').insert({
+       user_id: 'YOUR_UUID', assigned_user_email: 'test@test.com', role: 'super_admin'
+     });
+     console.log(error); // ← يجب أن يظهر خطأ RLS 
+     ```
+   - ✅ يجب أن يفشل مع خطأ "new row violates row-level security policy"

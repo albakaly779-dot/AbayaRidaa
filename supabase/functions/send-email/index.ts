@@ -220,11 +220,17 @@ Deno.serve(async (req) => {
     }
 
     // ---------------- SEND VIA SMTP ----------------
+    // TLS handshake at connection start ONLY for SMTPS ports (465 = standard SSL, 8465 = alt).
+    // For submission port (587) and standard SMTP (25/2525), the client MUST start plain
+    // and let denomailer auto-negotiate STARTTLS after EHLO.
+    // Enforcing tls:true on port 587 causes "received corrupt message of type InvalidContentType"
+    // because Gmail/Outlook/Zoho send a plaintext 220 greeting the TLS layer can't parse.
+    const useDirectTls = config.port === 465 || config.port === 8465;
     const client = new SMTPClient({
       connection: {
         hostname: config.host,
         port: config.port,
-        tls: config.useTls,
+        tls: useDirectTls,
         auth: {
           username: config.user,
           password: config.password,

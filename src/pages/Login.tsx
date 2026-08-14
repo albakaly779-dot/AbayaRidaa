@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, Lock, Mail, KeyRound, ArrowLeft, Shield, UserCheck, Headphones, Briefcase } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import { useSettingsStore } from "@/stores/settingsStore";
-import { sendOtp, verifyOtpAndSetPassword, signInWithPassword, mapSupabaseUser, detectUserRole, ALLOWED_EMAIL } from "@/lib/auth";
+import { sendOtp, verifyOtpAndSetPassword, signInWithPassword, mapSupabaseUser, detectUserRole } from "@/lib/auth";
 import type { UserRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import brandLogo from "@/assets/brand-logo.png";
@@ -52,7 +51,8 @@ export default function Login() {
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
-    setEmail(role === "admin" ? ALLOWED_EMAIL : "");
+    // Always start with an empty email field — do not leak the admin address publicly.
+    setEmail("");
     setStep("login");
   };
 
@@ -177,7 +177,7 @@ export default function Login() {
                     <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                       className="w-full rounded-xl border-2 border-gray-200 py-3 pe-4 ps-12 text-sm transition-colors focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20"
                       placeholder="أدخل بريدك الإلكتروني" dir="ltr"
-                      readOnly={selectedRole === "admin"} />
+                      autoComplete="email" />
                   </div>
                 </div>
                 <div>
@@ -201,11 +201,12 @@ export default function Login() {
                     </span>
                   ) : "تسجيل الدخول"}
                 </button>
-                <div className="text-center">
-                  <button type="button" onClick={handleSendOtp} disabled={loading}
-                    className="text-sm font-semibold text-gold hover:text-gold-dark transition-colors disabled:opacity-60">
-                    أول مرة؟ أنشئ حسابك عبر رمز التحقق
-                  </button>
+                <div className="text-center rounded-xl bg-cream/60 border border-gold/20 p-3">
+                  <p className="text-[11px] text-gray-600 leading-relaxed">
+                    لا تملك حساباً؟ الحسابات تُنشأ فقط من قِبل المشرف العام.
+                    <br />
+                    راجع مدير النظام لتفعيل حسابك.
+                  </p>
                 </div>
               </form>
               <button onClick={() => { setStep("role-select"); setPassword(""); }}
