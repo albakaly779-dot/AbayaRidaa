@@ -92,7 +92,7 @@ export default function Products() {
     if (Math.abs(newTotal - editData.total_cost) > 0.01) {
       setEditData((prev) => ({ ...prev, total_cost: Math.round(newTotal) }));
     }
-  }, [editData.fabric_meters, editData.fabric_price_per_meter, editData.tarha_cost, editData.extras_cost]);
+  }, [editData.fabric_meters, editData.fabric_price_per_meter, editData.tarha_cost, editData.extras_cost, editData.total_cost]);
 
   const updateStock = async (id: string, code: string, delta: number) => {
     const product = dbProducts.find((p) => p.id === id);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ShieldCheck, CheckCircle2, XCircle, Clock, Loader2, Filter, AlertCircle, Plus, DollarSign, Package, RotateCcw, Receipt, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -49,9 +49,7 @@ export default function Approvals() {
   const [reqReason, setReqReason] = useState("");
   const [reqEntityId, setReqEntityId] = useState("");
 
-  useEffect(() => { loadRequests(); }, [user?.id, filter]);
-
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     let query = supabase.from("approval_requests").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
@@ -75,7 +73,9 @@ export default function Approvals() {
     }));
     setRequests(mapped);
     setLoading(false);
-  };
+  }, [user?.id, filter]);
+
+  useEffect(() => { loadRequests(); }, [loadRequests]);
 
   const handleCreateRequest = async () => {
     if (!user?.id) return;

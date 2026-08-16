@@ -13,7 +13,7 @@ import { WHATSAPP_TEMPLATES } from "@/constants/config";
 export default function Debts() {
   const { user } = useAuth();
   const { getDebtors, getTotalDebt, orders, initializeData } = useDataStore();
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   const debtors = getDebtors();
   const totalDebt = getTotalDebt();

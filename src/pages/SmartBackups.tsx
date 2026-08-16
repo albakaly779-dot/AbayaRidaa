@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HardDrive, Download, Upload, Loader2, Info, Database, Shield, CheckCircle2, FileJson, Trash2, RefreshCw, Calendar } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -33,13 +33,7 @@ export default function SmartBackups() {
   const [stats, setStats] = useState<Record<string, number>>({});
   const [lastBackup, setLastBackup] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadStats();
-    const saved = localStorage.getItem("last_backup_date");
-    if (saved) setLastBackup(saved);
-  }, [user?.id]);
-
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     if (!user?.id) return;
     const counts: Record<string, number> = {};
     for (const table of BACKUP_TABLES) {
@@ -51,9 +45,15 @@ export default function SmartBackups() {
       }
     }
     setStats(counts);
-  };
+  }, [user?.id]);
 
-  const handleExport = async () => {
+  useEffect(() => {
+    loadStats();
+    const saved = localStorage.getItem("last_backup_date");
+    if (saved) setLastBackup(saved);
+  }, [loadStats]);
+
+  const exportBackup = async () => {
     if (!user?.id) return;
     setExporting(true);
     setProgress({ current: 0, total: BACKUP_TABLES.length, table: "" });

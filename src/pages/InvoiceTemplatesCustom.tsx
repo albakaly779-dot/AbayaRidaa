@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { FileImage, Upload, Trash2, Check, Star, Loader2, Info, Eye, X, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,9 +40,7 @@ export default function InvoiceTemplatesCustom() {
   const [templateName, setTemplateName] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  useEffect(() => { loadTemplates(); }, [user?.id]);
-
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase.from("invoice_templates_custom")
       .select("*").eq("user_id", user.id)
@@ -52,7 +50,9 @@ export default function InvoiceTemplatesCustom() {
     }));
     setTemplates(mapped);
     setLoading(false);
-  };
+  }, [user?.id]);
+
+  useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
   const handleFileUpload = async (file: File) => {
     if (!user?.id) return;

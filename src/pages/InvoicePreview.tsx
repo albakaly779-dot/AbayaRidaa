@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, RefreshCw, Ruler, Palette, FileText, Settings as SettingsIcon, Sparkles } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -60,7 +60,7 @@ export default function InvoicePreview() {
   const businessName = settings.businessName || "رداء";
   const displayLogo = settings.invoiceLogoUrl || settings.logoUrl || brandLogo;
 
-  const generateBarcode = (text: string) => {
+  const generateBarcode = useCallback((text: string) => {
     const bars: string[] = [];
     let x = 0;
     for (let i = 0; i < text.length; i++) {
@@ -73,9 +73,9 @@ export default function InvoicePreview() {
       x += w2 + 1;
     }
     return `<svg viewBox="0 0 ${x + 10} 50" xmlns="http://www.w3.org/2000/svg">${bars.join("")}<text x="${(x + 10) / 2}" y="48" text-anchor="middle" font-size="7" font-family="monospace" fill="${primary}">${text}</text></svg>`;
-  };
+  }, [primary]);
 
-  const barcodeHtml = useMemo(() => generateBarcode(SAMPLE_ORDER.orderNumber), [primary]);
+  const barcodeHtml = useMemo(() => generateBarcode(SAMPLE_ORDER.orderNumber), [generateBarcode]);
 
   const isModern = previewTemplate === "modern";
   const headerStyle = previewTemplate === "modern"

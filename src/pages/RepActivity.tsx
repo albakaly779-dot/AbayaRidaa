@@ -66,7 +66,7 @@ export default function RepActivity() {
         setReceipts((data || []) as ReceiptInfo[]);
         setLoadingReceipts(false);
       });
-  }, [repId, repOrders.length]);
+  }, [repId, repOrders]);
 
   const commissions = repId ? getRepCommissions(repId) : [];
   const totalEarned = repId ? getRepTotalEarned(repId) : 0;

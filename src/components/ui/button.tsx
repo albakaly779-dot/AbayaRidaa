@@ -53,4 +53,5 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 )
 Button.displayName = "Button"
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional variant export from compound UI module
 export { Button, buttonVariants }

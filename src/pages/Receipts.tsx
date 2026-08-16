@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import { Image as ImageIcon, Search, X, Calendar, User, Download, ExternalLink, FileImage, BarChart3 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -33,11 +33,7 @@ export default function Receipts() {
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptRecord | null>(null);
   const [showRepReport, setShowRepReport] = useState(false);
 
-  useEffect(() => {
-    if (user?.id) loadReceipts();
-  }, [user?.id]);
-
-  const loadReceipts = async () => {
+  const loadReceipts = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from("payments")
       .select("*")
@@ -61,7 +57,11 @@ export default function Receipts() {
         })));
     }
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.id) loadReceipts();
+  }, [user?.id, loadReceipts]);
 
   // Extract receipt URL — fallback to notes parsing
   const getReceiptUrl = (receipt: ReceiptRecord) => {

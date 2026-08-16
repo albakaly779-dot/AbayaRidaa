@@ -29,7 +29,7 @@ export default function Rules() {
     discountValue: 0, priority: 0,
   });
 
-  useEffect(() => { if (user?.id) initializeRules(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeRules(user.id); }, [user?.id, initializeRules]);
 
   const resetForm = () => {
     setForm({ name: "", type: "governorate_discount", conditionField: "governorate", conditionValue: "", discountType: "fixed", discountValue: 0, priority: 0 });

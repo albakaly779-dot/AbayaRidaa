@@ -23,7 +23,7 @@ export default function AuditLogs() {
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
 
-  useEffect(() => { if (user?.id) initializeLogs(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeLogs(user.id); }, [user?.id, initializeLogs]);
 
   const filtered = logs.filter((log) => {
     const matchSearch = !search || log.details.includes(search) || log.entityType.includes(search) || log.action.includes(search);

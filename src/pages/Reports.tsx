@@ -70,7 +70,7 @@ export default function Reports() {
     const byCategory = getExpensesByCategory();
     return Object.entries(byCategory).map(([cat, amount]) => ({ name: getExpenseCategoryLabel(cat), value: amount }))
       .filter((e) => e.value > 0).sort((a, b) => b.value - a.value);
-  }, [expenses]);
+  }, [getExpensesByCategory]);
 
   const topProducts = useMemo(() => {
     const productCount: Record<string, { count: number; revenue: number }> = {};

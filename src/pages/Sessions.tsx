@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Monitor, Smartphone, Globe, LogOut, Shield, Loader2, AlertCircle, RefreshCw, Clock, MapPin, ShieldAlert, LogIn } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,7 +34,7 @@ export default function Sessions() {
   const currentUA = typeof navigator !== "undefined" ? navigator.userAgent : "";
   const currentInfo = parseUserAgent(currentUA);
 
-  const loadHistory = async () => {
+  const loadHistory = useCallback(async () => {
     if (!user?.email) return;
     setLoading(true);
     const { data } = await supabase
@@ -46,9 +46,9 @@ export default function Sessions() {
       .limit(30);
     setLoginHistory((data || []) as LoginRecord[]);
     setLoading(false);
-  };
+  }, [user?.email]);
 
-  useEffect(() => { loadHistory(); }, [user?.email]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const handleGlobalLogout = async () => {
     if (!confirm("سيتم تسجيل خروجك من جميع الأجهزة والجلسات. متابعة؟")) return;

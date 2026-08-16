@@ -26,4 +26,5 @@ const Toaster = ({ ...props }: ToasterProps) => {
   )
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional toast API export
 export { Toaster, toast }

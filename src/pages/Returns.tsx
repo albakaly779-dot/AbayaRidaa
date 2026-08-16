@@ -26,7 +26,7 @@ export default function Returns() {
   const [formReason, setFormReason] = useState("");
   const [formNotes, setFormNotes] = useState("");
 
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   const customerReturns = useMemo(() => returns.filter((r) => r.type === "customer"), [returns]);
   const supplierReturns = useMemo(() => returns.filter((r) => r.type === "supplier"), [returns]);

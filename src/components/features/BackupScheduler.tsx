@@ -37,6 +37,7 @@ function daysSinceLastBackup(): number {
   return Math.floor((Date.now() - new Date(last).getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- intentional hook export from compound feature module
 export function useBackupAlert(): { showAlert: boolean; daysSince: number; lastBackup: string | null } {
   const days = daysSinceLastBackup();
   return {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import { Users, TrendingUp, Award, BarChart3, PieChart as PieChartIcon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepStore } from "@/stores/repStore";
@@ -41,19 +41,7 @@ export default function RepPerformance() {
   const [repStats, setRepStats] = useState<RepStats[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (user?.id) {
-      initReps(user.id);
-      initData(user.id);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    loadRepStats();
-  }, [user?.id, customers]);
-
-  const loadRepStats = async () => {
+  const loadRepStats = useCallback(async () => {
     setLoading(true);
     const { data: allCustomers } = await supabase.from("customers")
       .select("added_by_id, added_by_name, source, created_at")
@@ -81,7 +69,18 @@ export default function RepPerformance() {
 
     setRepStats(Array.from(statsMap.values()).sort((a, b) => b.customers - a.customers));
     setLoading(false);
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (user?.id) {
+      initReps(user.id);
+      initData(user.id);
+    }
+  }, [user?.id, initReps, initData]);
+
+  useEffect(() => {
+    if (user?.id) loadRepStats();
+  }, [user?.id, customers, loadRepStats]);
 
   // Chart: Customers per rep
   const repChartData = useMemo(() =>

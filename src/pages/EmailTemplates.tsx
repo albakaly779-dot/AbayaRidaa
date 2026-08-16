@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Mail, Save, Loader2, Eye, Info, Sparkles, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -101,10 +101,6 @@ export default function EmailTemplates() {
   const [showPreview, setShowPreview] = useState(true);
 
   useEffect(() => {
-    if (user?.id) loadTemplates();
-  }, [user?.id]);
-
-  useEffect(() => {
     const t = templates[selectedKey];
     if (t) {
       setSubject(t.subject);
@@ -116,7 +112,7 @@ export default function EmailTemplates() {
     }
   }, [selectedKey, templates]);
 
-  const loadTemplates = async () => {
+  const loadTemplates = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase.from("email_templates").select("*").eq("user_id", user.id);
     const map: Record<string, EmailTemplate> = {};
@@ -127,7 +123,11 @@ export default function EmailTemplates() {
     });
     setTemplates(map);
     setLoading(false);
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) loadTemplates();
+  }, [user?.id, loadTemplates]);
 
   const handleSave = async () => {
     if (!user?.id) return;

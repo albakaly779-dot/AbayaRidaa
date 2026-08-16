@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, User, Clock, MapPin, Activity, LogIn, LogOut, MousePointerClick, FileText, Loader2, Calendar, Filter, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -48,7 +48,7 @@ export default function UserActivity() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [daysFilter, setDaysFilter] = useState<number>(30);
 
-  const loadLogs = async () => {
+  const loadLogs = useCallback(async () => {
     if (!decodedEmail) return;
     setLoading(true);
     const cutoff = new Date(Date.now() - daysFilter * 86400000).toISOString();
@@ -66,9 +66,9 @@ export default function UserActivity() {
       setLogs((data || []) as ActivityRow[]);
     }
     setLoading(false);
-  };
+  }, [decodedEmail, daysFilter]);
 
-  useEffect(() => { loadLogs(); }, [decodedEmail, daysFilter]);
+  useEffect(() => { loadLogs(); }, [loadLogs]);
 
   const filtered = useMemo(() => {
     if (typeFilter === "all") return logs;

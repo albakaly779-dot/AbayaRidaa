@@ -34,7 +34,7 @@ export default function Orders() {
     orderId: string; customerId: string; customerName: string; remaining: number;
   } | null>(null);
 
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   const filtered = useMemo(() => {
     return orders.filter((o) => {

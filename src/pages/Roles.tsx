@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus, Trash2, Users, ShieldCheck, Eye, Settings,
@@ -143,7 +143,7 @@ export default function Roles() {
 
   useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
 
-  const loadRoles = async () => {
+  const loadRoles = useCallback(async () => {
     if (!user?.id) { setLoading(false); return; }
     const { data, error } = await supabase.from("user_roles").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     if (error) { toast.error("فشل تحميل الصلاحيات: " + error.message); setLoading(false); return; }
@@ -173,9 +173,9 @@ export default function Roles() {
     }
 
     setLoading(false);
-  };
+  }, [user?.id]);
 
-  useEffect(() => { loadRoles(); }, [user?.id]);
+  useEffect(() => { loadRoles(); }, [loadRoles]);
 
   const handleAddRole = async () => {
     if (!user?.id) return;

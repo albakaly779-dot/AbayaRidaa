@@ -21,7 +21,7 @@ export default function Expenses() {
   const [fdate, setFdate] = useState("");
   const [fn, setFn] = useState("");
 
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   const totalExpenses = getTotalExpenses();
   const byCategory = getExpensesByCategory();

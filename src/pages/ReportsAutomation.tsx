@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FileSpreadsheet, Download, Send, Calendar, Clock, Plus, Trash2, Loader2, Mail, RefreshCw, Play, Info, X } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -73,18 +73,7 @@ export default function ReportsAutomation() {
     recipients: [],
   });
 
-  useEffect(() => {
-    if (user?.id) {
-      initializeData(user.id);
-      initExp(user.id);
-      initReturns(user.id);
-      initReps(user.id);
-      initializeSettings(user.id);
-      loadSchedules();
-    }
-  }, [user?.id]);
-
-  const loadSchedules = async () => {
+  const loadSchedules = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase.from("report_schedules").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
     const mapped: ReportSchedule[] = (data || []).map((r: {
@@ -105,7 +94,18 @@ export default function ReportsAutomation() {
     }));
     setSchedules(mapped);
     setLoading(false);
-  };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) {
+      initializeData(user.id);
+      initExp(user.id);
+      initReturns(user.id);
+      initReps(user.id);
+      initializeSettings(user.id);
+      loadSchedules();
+    }
+  }, [user?.id, initializeData, initExp, initReturns, initReps, initializeSettings, loadSchedules]);
 
   const buildReport = (reportType: ReportType): { data: Record<string, unknown>[]; summary: Record<string, string | number>; title: string } => {
     switch (reportType) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { UserCheck, DollarSign, EyeOff, Eye, Save, Loader2, Info, Search, Trash2, Plus, Filter } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,24 +38,13 @@ export default function RepPricing() {
   const [search, setSearch] = useState("");
   const [edits, setEdits] = useState<Record<string, { price?: number; hideCost?: boolean; hideProfit?: boolean }>>({});
 
-  useEffect(() => {
-    if (user?.id) {
-      initializeData(user.id);
-      loadProducts();
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (selectedRep) loadPricing();
-  }, [selectedRep, user?.id]);
-
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async () => {
     const { data } = await supabase.from("products").select("id, code, name, sell_price, total_cost").eq("is_active", true).order("name");
     setProducts(data || []);
     setLoading(false);
-  };
+  }, []);
 
-  const loadPricing = async () => {
+  const loadPricing = useCallback(async () => {
     if (!user?.id || !selectedRep) return;
     const { data } = await supabase.from("rep_pricing").select("*").eq("user_id", user.id).eq("rep_email", selectedRep);
     const mapped: RepPrice[] = (data || []).map((r: { id: string; rep_email: string; product_code: string; custom_price: string; hide_cost: boolean; hide_profit: boolean }) => {
@@ -72,7 +61,18 @@ export default function RepPricing() {
     });
     setPricing(mapped);
     setEdits({});
-  };
+  }, [user?.id, selectedRep, products]);
+
+  useEffect(() => {
+    if (user?.id) {
+      initializeData(user.id);
+      loadProducts();
+    }
+  }, [user?.id, initializeData, loadProducts]);
+
+  useEffect(() => {
+    if (selectedRep) loadPricing();
+  }, [selectedRep, loadPricing]);
 
   const handleSetPrice = async (product: Product, price: number) => {
     if (!user?.id || !selectedRep) return;

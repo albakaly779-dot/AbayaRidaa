@@ -17,7 +17,7 @@ export default function Suppliers() {
   const [sf, setSf] = useState({ name: "", phone: "", email: "", company: "", city: "", notes: "" });
   const [tf, setTf] = useState({ type: "purchase" as "purchase" | "payment" | "return", amount: 0, pieces: 0, fabricType: "", fabricUnit: "متر", fabricQuantity: 0, date: "", notes: "" });
 
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   const totalDebt = getTotalSupplierDebt();
   const totalFabric = getTotalFabricByUnit();

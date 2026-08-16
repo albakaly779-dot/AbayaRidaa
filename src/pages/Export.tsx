@@ -20,7 +20,7 @@ export default function ExportPage() {
 
   useEffect(() => {
     if (user?.id) { initializeData(user.id); initExp(user.id); initSup(user.id); initRet(user.id); initRep(user.id); }
-  }, [user?.id]);
+  }, [user?.id, initializeData, initExp, initSup, initRet, initRep]);
 
   const exportSections = [
     {

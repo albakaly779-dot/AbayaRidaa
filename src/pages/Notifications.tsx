@@ -13,7 +13,7 @@ export default function Notifications() {
   const { user } = useAuth();
   const { notifications, initializeData, clearNotifications } = useNotificationStore();
 
-  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id]);
+  useEffect(() => { if (user?.id) initializeData(user.id); }, [user?.id, initializeData]);
 
   return (
     <div className="space-y-4 lg:space-y-6">

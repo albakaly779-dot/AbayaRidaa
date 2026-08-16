@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, TrendingUp, Users, Calendar, Award, Loader2, Download, MousePointerClick, LogIn, FileText, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
@@ -28,7 +28,7 @@ export default function ActivityAnalytics() {
   const [loading, setLoading] = useState(true);
   const [daysFilter, setDaysFilter] = useState(30);
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     const cutoff = new Date(Date.now() - daysFilter * 86400000).toISOString();
@@ -39,9 +39,9 @@ export default function ActivityAnalytics() {
       .limit(5000);
     setLogs((data || []) as ActivityRow[]);
     setLoading(false);
-  };
+  }, [user?.id, daysFilter]);
 
-  useEffect(() => { loadAll(); }, [user?.id, daysFilter]);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   // Aggregations
   const stats = useMemo(() => {
