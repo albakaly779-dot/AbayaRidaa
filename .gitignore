@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Telegram bot runtime data
+telegram-bot/data/*
+!telegram-bot/data/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -23,3 +27,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Python
+__pycache__/
+*.py[cod]

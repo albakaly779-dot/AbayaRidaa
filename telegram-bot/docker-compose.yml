@@ -1,0 +1,9 @@
+services:
+  ridaa-order-bot:
+    build: .
+    container_name: ridaa-order-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
