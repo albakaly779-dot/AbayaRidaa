@@ -6,8 +6,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { signInWithPassword, mapSupabaseUser, detectUserRole } from "@/lib/auth";
 import type { UserRole } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import brandLogo from "@/assets/brand-logo.png";
-import loginBg from "@/assets/login-bg.jpg";
+import brandLogo from "@/assets/brand-logo.webp";
+import loginBg from "@/assets/login-bg.webp";
 
 type Step = "role-select" | "login";
 
@@ -30,21 +30,40 @@ export default function Login() {
   const [businessLogo, setBusinessLogo] = useState<string>("");
   const [businessName, setBusinessName] = useState<string>("رداء");
 
-  // Try to load public logo from settings — fetch by checking app_settings without auth
+  // Load branding after the first paint. The local logo is always the immediate fallback.
   useEffect(() => {
-    (async () => {
+    const cached = sessionStorage.getItem("abaya-public-branding");
+    if (cached) {
       try {
-        const { data } = await supabase.from("app_settings").select("user_id, key, value").in("key", ["logoUrl", "businessName"]).limit(20);
-        if (data && data.length > 0) {
-          const logoRow = data.find((r: { key: string; value: string }) => r.key === "logoUrl" && r.value);
-          const nameRow = data.find((r: { key: string; value: string }) => r.key === "businessName" && r.value);
-          if (logoRow?.value) setBusinessLogo(logoRow.value);
-          if (nameRow?.value) setBusinessName(nameRow.value);
-        }
+        const branding = JSON.parse(cached) as { logo?: string; name?: string };
+        if (branding.logo) setBusinessLogo(branding.logo);
+        if (branding.name) setBusinessName(branding.name);
       } catch {
-        /* fall back to default */
+        sessionStorage.removeItem("abaya-public-branding");
       }
-    })();
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const { data } = await supabase
+          .from("app_settings")
+          .select("key, value")
+          .in("key", ["logoUrl", "businessName"])
+          .limit(20);
+        if (!data || data.length === 0) return;
+
+        const logoRow = data.find((r: { key: string; value: string }) => r.key === "logoUrl" && r.value);
+        const nameRow = data.find((r: { key: string; value: string }) => r.key === "businessName" && r.value);
+        const branding = { logo: logoRow?.value || "", name: nameRow?.value || "" };
+        if (branding.logo) setBusinessLogo(branding.logo);
+        if (branding.name) setBusinessName(branding.name);
+        sessionStorage.setItem("abaya-public-branding", JSON.stringify(branding));
+      } catch {
+        /* Keep the local fallback when the public settings query is unavailable. */
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleRoleSelect = (role: UserRole) => {
@@ -93,7 +112,7 @@ export default function Login() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 lg:max-w-lg">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <img src={displayLogo} alt={businessName} className="mx-auto mb-4 size-20 rounded-2xl object-cover shadow-xl shadow-navy/20 bg-white" />
+            <img src={displayLogo} alt={businessName} width={80} height={80} decoding="async" fetchPriority="high" className="mx-auto mb-4 size-20 rounded-2xl object-cover shadow-xl shadow-navy/20 bg-white" />
             <h1 className="font-kufi text-2xl font-bold text-navy">{businessName}</h1>
             <p className="mt-1 text-sm text-gray-500">نظام إدارة المبيعات والمديونيات</p>
           </div>
@@ -181,7 +200,7 @@ export default function Login() {
       </div>
 
       <div className="relative hidden flex-1 lg:block">
-        <img src={loginBg} alt="" className="h-full w-full object-cover" />
+        <img src={loginBg} alt="" width={1200} height={672} decoding="async" fetchPriority="high" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-navy/80 via-navy/50 to-transparent" />
         <div className="absolute bottom-12 right-12 max-w-md">
           <h2 className="font-kufi text-3xl font-bold leading-relaxed text-white">

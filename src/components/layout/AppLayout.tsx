@@ -8,7 +8,7 @@ import GlobalSearch from "@/components/features/GlobalSearch";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { usePageVisitLogger } from "@/hooks/useActivityLogger";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);

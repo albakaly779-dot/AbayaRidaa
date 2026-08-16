@@ -202,7 +202,16 @@ export default function Roles() {
         if (inviteError instanceof FunctionsHttpError) {
           try { errorMsg = await inviteError.context?.text() || errorMsg; } catch { /* ignore */ }
         }
-        toast.error("فشل: " + errorMsg);
+        try {
+          const payload = JSON.parse(errorMsg) as { error?: string; technical?: string };
+          const technical = payload.technical?.toLowerCase() || "";
+          errorMsg = technical.includes("ipnotinner")
+            ? "تعذر إنشاء الحساب بسبب إعداد قديم في Edge Function. أعد نشر invite-user ثم أعد المحاولة."
+            : payload.error || errorMsg;
+        } catch {
+          // Keep the original Supabase message when it is not JSON.
+        }
+        toast.error("فشل إنشاء الحساب: " + errorMsg);
         setInviting(false);
         return;
       }
@@ -219,6 +228,9 @@ export default function Roles() {
       // now that RLS restricts writes to the admin JWT anyway.
       if (inviteData?.roleWarning) {
         toast.warning("الحساب أُنشئ لكن هناك تحذير في حفظ الدور: " + inviteData.roleWarning);
+      }
+      if (inviteData?.metadataWarning) {
+        toast.warning("تم إنشاء الحساب، لكن تعذر حفظ بعض بيانات الملف الشخصي. يمكن تحديثها لاحقًا.");
       }
 
       setCredentials({

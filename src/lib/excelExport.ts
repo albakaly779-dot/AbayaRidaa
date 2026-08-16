@@ -1,5 +1,5 @@
 // Excel export utilities using SheetJS (xlsx)
-import * as XLSX from "xlsx";
+import type { ColInfo } from "xlsx";
 import type { Order, Payment } from "@/types";
 import { formatCurrency } from "./formatters";
 
@@ -14,7 +14,7 @@ export interface ReportMeta {
   to?: string;
 }
 
-function autoWidth(rows: Record<string, unknown>[]): XLSX.ColInfo[] {
+function autoWidth(rows: Record<string, unknown>[]): ColInfo[] {
   if (rows.length === 0) return [];
   const headers = Object.keys(rows[0]);
   return headers.map((h) => {
@@ -26,33 +26,13 @@ function autoWidth(rows: Record<string, unknown>[]): XLSX.ColInfo[] {
   });
 }
 
-function styleHeader(ws: XLSX.WorkSheet, headers: string[]): void {
-  // Bold header row (limited style support in free xlsx)
-  headers.forEach((_, i) => {
-    const cell = XLSX.utils.encode_cell({ r: 0, c: i });
-    if (ws[cell]) {
-      ws[cell].s = { font: { bold: true, color: { rgb: "FFFFFF" } }, fill: { fgColor: { rgb: "1B2A4A" } } };
-    }
-  });
-}
-
-function addMetaRows(ws: XLSX.WorkSheet, meta: ReportMeta, dataStartRow: number): void {
-  XLSX.utils.sheet_add_aoa(ws, [
-    [meta.businessName],
-    [meta.title],
-    [meta.subtitle],
-    [`تاريخ التوليد: ${meta.generatedAt}`],
-    meta.from && meta.to ? [`الفترة: من ${meta.from} إلى ${meta.to}`] : [""],
-    [""],
-  ], { origin: `A${dataStartRow}` });
-}
-
-export function generateExcelReport(
+export async function generateExcelReport(
   reportType: ReportType,
   data: Record<string, unknown>[],
   meta: ReportMeta,
   summary?: Record<string, string | number>
-): Blob {
+): Promise<Blob> {
+  const XLSX = await import("xlsx");
   const wb = XLSX.utils.book_new();
 
   // Insert metadata rows at top

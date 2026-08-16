@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import { logActivity } from "@/hooks/useActivityLogger";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 
 interface PasswordRule {
   label: string;

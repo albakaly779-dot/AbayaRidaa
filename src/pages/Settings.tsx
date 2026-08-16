@@ -11,7 +11,7 @@ import { useSettingsStore, type FixedExpense, type InvoiceTemplate, type Invoice
 import { useAuditStore } from "@/stores/auditStore";
 import { supabase } from "@/lib/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 import { formatCurrency } from "@/lib/formatters";
 
 export default function Settings() {

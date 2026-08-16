@@ -230,3 +230,21 @@ WHERE trigger_name IN ('on_auth_user_created', 'on_auth_user_updated');
 ## 📞 الدعم
 
 للمشاكل التقنية غير المذكورة أعلاه: contact@onspace.ai
+
+
+---
+
+## تحديثات الأداء وإصلاح إنشاء الحساب — 2026-08-16
+
+تم تحديث الواجهة لتستخدم `React.lazy` و`Suspense` للمسارات، وتم تحويل الشعار والخلفية وصورة المشاركة إلى WebP مضغوط. كما أصبح تحميل `xlsx` ديناميكيًا عند إنشاء التقرير فقط، وأصبح طلب إعدادات العلامة التجارية في صفحة الدخول مؤجلًا مع cache جلسة محلية.
+
+تم تحديث `supabase/functions/invite-user` ليُنشئ المستخدم بالحقول الأساسية أولًا، ثم يحاول حفظ `user_metadata` في عملية منفصلة غير مانعة. هذا يعالج خطأ `ipNotInner` الذي كان يظهر أثناء `createUser` عندما تتعارض metadata مع trigger أو إعداد Auth قديم.
+
+بعد رفع الكود، يجب نشر الوظيفة فعليًا إلى Supabase، لأن رفع ملفات المستودع وحده لا يحدّث Edge Function المنشورة:
+
+```bash
+npx supabase login
+npx supabase functions deploy invite-user --project-ref wtvbkjnyluwvsbagwtvb
+```
+
+بعد النشر، اختبر إنشاء حساب جديد من `/roles` بحساب مشرف، وتحقق من أن الحساب يظهر في `user_roles` وأن تسجيل الدخول بالحساب الجديد يعمل. إذا استمر ظهور `ipNotInner` بعد النشر، راجع Logs الخاصة بالـ Edge Function وtriggers الخاصة بـ `auth.users`، لأن السبب عندها سيكون في إعداد قاعدة البيانات وليس في حزمة الواجهة.

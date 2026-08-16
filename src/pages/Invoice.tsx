@@ -7,7 +7,7 @@ import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import { formatCurrency, formatDate, formatPhone, getStatusLabel, getPaymentStatusLabel } from "@/lib/formatters";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 
 interface CustomTemplate {
   id: string;

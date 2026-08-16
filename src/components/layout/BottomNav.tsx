@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { supabase } from "@/lib/supabase";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 
 export default function BottomNav() {
   const location = useLocation();
@@ -31,15 +31,24 @@ export default function BottomNav() {
   ];
 
   useEffect(() => {
+    if (role !== "admin" && role !== "operations") {
+      setStockAlertCount(0);
+      return;
+    }
+
+    let cancelled = false;
     supabase.from("products").select("code, stock_quantity, min_stock_alert")
       .eq("is_active", true).gt("stock_quantity", 0)
       .then(({ data }) => {
-        if (data) {
-          const alerts = data.filter((p: { stock_quantity: number; min_stock_alert: number }) => p.stock_quantity <= p.min_stock_alert);
-          setStockAlertCount(alerts.length);
-        }
+        if (cancelled || !data) return;
+        const alerts = data.filter((p: { stock_quantity: number; min_stock_alert: number }) => p.stock_quantity <= p.min_stock_alert);
+        setStockAlertCount(alerts.length);
       });
-  }, [location.pathname]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-40 border-t bg-white/95 backdrop-blur-lg safe-area-bottom lg:hidden">

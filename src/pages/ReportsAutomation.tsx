@@ -178,7 +178,7 @@ export default function ReportsAutomation() {
         };
       }
 
-      const blob = generateExcelReport(reportType, reportData.data, {
+      const blob = await generateExcelReport(reportType, reportData.data, {
         title: reportData.title,
         subtitle: `${SCHEDULE_LABELS[reportType] || ""} - ${new Date().toLocaleDateString("ar-SA")}`,
         generatedAt: new Date().toLocaleString("ar-SA"),
@@ -212,7 +212,7 @@ export default function ReportsAutomation() {
     setSending(schedule.id);
     try {
       const reportData = buildReport(schedule.reportType);
-      const blob = generateExcelReport(schedule.reportType, reportData.data, {
+      const blob = await generateExcelReport(schedule.reportType, reportData.data, {
         title: reportData.title,
         subtitle: `تقرير ${SCHEDULE_LABELS[schedule.scheduleType]} - ${new Date().toLocaleDateString("ar-SA")}`,
         generatedAt: new Date().toLocaleString("ar-SA"),

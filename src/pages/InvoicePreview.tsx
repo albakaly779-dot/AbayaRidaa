@@ -4,7 +4,7 @@ import { ArrowLeft, RefreshCw, Ruler, Palette, FileText, Settings as SettingsIco
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore, type InvoicePageSize, type InvoiceTemplate } from "@/stores/settingsStore";
 import { formatCurrency, formatDate, formatPhone } from "@/lib/formatters";
-import brandLogo from "@/assets/brand-logo.png";
+import brandLogo from "@/assets/brand-logo.webp";
 
 const PAGE_DIMENSIONS = {
   A4: { width: "210mm", minHeight: "297mm", label: "A4 (210×297مم)" },

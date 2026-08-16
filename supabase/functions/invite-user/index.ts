@@ -336,28 +336,37 @@ Deno.serve(async (req) => {
 
     let userId: string | null = null;
     let wasExisting = false;
+    let metadataWarning: string | null = null;
+
+    const applySafeMetadata = async (targetUserId: string, existingMeta: Record<string, unknown> = {}) => {
+      const { error: metadataError } = await supabaseAdmin.auth.admin.updateUserById(
+        targetUserId,
+        { user_metadata: { ...existingMeta, ...safeMetadata } },
+      );
+      if (metadataError) {
+        metadataWarning = metadataError.message;
+        console.error("Metadata update skipped:", metadataError.message);
+      }
+    };
+
+    const updateCredentials = async (targetUserId: string) => {
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        targetUserId,
+        { password, email_confirm: true },
+      );
+      if (updateError) {
+        console.error("updateUserById failed:", updateError.message);
+        return updateError;
+      }
+      return null;
+    };
 
     userId = await findUserIdByEmail(supabaseAdmin, rawEmail);
 
     if (userId) {
       wasExisting = true;
-      const { data: existing } = await supabaseAdmin.auth.admin.getUserById(
-        userId,
-      );
-      const existingMeta = existing?.user?.user_metadata || {};
-
-      const { error: updateError } = await supabaseAdmin.auth.admin
-        .updateUserById(userId, {
-          password,
-          email_confirm: true,
-          user_metadata: {
-            ...existingMeta,
-            ...safeMetadata,
-          },
-        });
-
+      const updateError = await updateCredentials(userId);
       if (updateError) {
-        console.error("updateUserById failed:", updateError.message);
         return new Response(
           JSON.stringify({
             error: "تعذر تحديث الحساب. يرجى المحاولة مرة أخرى.",
@@ -366,14 +375,17 @@ Deno.serve(async (req) => {
           { status: 500, headers: jsonHeaders },
         );
       }
+      const { data: existing } = await supabaseAdmin.auth.admin.getUserById(userId);
+      await applySafeMetadata(userId, existing?.user?.user_metadata || {});
     } else {
-      const { data: newUserData, error: createError } = await supabaseAdmin
-        .auth.admin.createUser({
-          email: rawEmail,
-          password,
-          email_confirm: true,
-          user_metadata: safeMetadata,
-        });
+      // Keep createUser minimal. Some Auth/trigger combinations reject metadata
+      // during the insert and return the opaque `ipNotInner` error. Metadata is
+      // applied in a separate, non-blocking update after the user exists.
+      const { data: newUserData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: rawEmail,
+        password,
+        email_confirm: true,
+      });
 
       if (createError) {
         const msg = createError.message.toLowerCase();
@@ -384,21 +396,18 @@ Deno.serve(async (req) => {
           userId = await findUserIdByEmail(supabaseAdmin, rawEmail);
           if (userId) {
             wasExisting = true;
-            const { error: updErr } = await supabaseAdmin.auth.admin
-              .updateUserById(userId, {
-                password,
-                email_confirm: true,
-                user_metadata: safeMetadata,
-              });
-            if (updErr) {
+            const updateError = await updateCredentials(userId);
+            if (updateError) {
               return new Response(
                 JSON.stringify({
                   error: "تعذر تحديث الحساب. يرجى المحاولة مرة أخرى.",
-                  technical: updErr.message,
+                  technical: updateError.message,
                 }),
                 { status: 500, headers: jsonHeaders },
               );
             }
+            const { data: existing } = await supabaseAdmin.auth.admin.getUserById(userId);
+            await applySafeMetadata(userId, existing?.user?.user_metadata || {});
           } else {
             return new Response(
               JSON.stringify({
@@ -419,6 +428,7 @@ Deno.serve(async (req) => {
         }
       } else {
         userId = newUserData.user?.id || null;
+        if (userId) await applySafeMetadata(userId);
       }
     }
 
@@ -605,6 +615,7 @@ Deno.serve(async (req) => {
         emailSent,
         emailError,
         roleWarning: roleAssignmentError,
+        metadataWarning,
         message: wasExisting
           ? "تم تحديث الحساب وكلمة المرور بنجاح"
           : "تم إنشاء الحساب بنجاح — جاهز للدخول الفوري",
