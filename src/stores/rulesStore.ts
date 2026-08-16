@@ -15,6 +15,28 @@ export interface DiscountRule {
   createdAt: string;
 }
 
+type DiscountRuleRow = {
+  id: string;
+  name: string;
+  type: DiscountRule["type"];
+  condition_field: string;
+  condition_value: string;
+  discount_type: DiscountRule["discountType"];
+  discount_value: number | string;
+  is_active: boolean;
+  priority: number;
+  created_at: string;
+};
+
+type DiscountRuleUpdate = Partial<{
+  name: string;
+  condition_value: string;
+  discount_type: DiscountRule["discountType"];
+  discount_value: number;
+  is_active: boolean;
+  priority: number;
+}>;
+
 interface RulesState {
   rules: DiscountRule[];
   initialized: boolean;
@@ -36,7 +58,7 @@ export const useRulesStore = create<RulesState>()((set, get) => ({
   initializeRules: async (userId: string) => {
     if (get().initialized) return;
     const { data } = await supabase.from("discount_rules").select("*").eq("user_id", userId).order("priority", { ascending: true });
-    const rules = (data || []).map((r: any) => ({
+    const rules = (data || []).map((r: DiscountRuleRow) => ({
       id: r.id, name: r.name, type: r.type, conditionField: r.condition_field,
       conditionValue: r.condition_value, discountType: r.discount_type,
       discountValue: Number(r.discount_value), isActive: r.is_active,
@@ -59,7 +81,7 @@ export const useRulesStore = create<RulesState>()((set, get) => ({
   },
 
   updateRule: async (id, data) => {
-    const payload: any = {};
+    const payload: DiscountRuleUpdate = {};
     if (data.name !== undefined) payload.name = data.name;
     if (data.conditionValue !== undefined) payload.condition_value = data.conditionValue;
     if (data.discountType !== undefined) payload.discount_type = data.discountType;

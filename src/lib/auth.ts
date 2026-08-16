@@ -3,8 +3,6 @@ import type { User } from "@supabase/supabase-js";
 
 // Admin email
 export const ALLOWED_EMAIL = "albakaly779@gmail.com";
-export const OWNER_PHONE = "+967779673273";
-export const OWNER_NAME = "رداء";
 
 export type UserRole =
   | "admin"          // Super Admin / Owner
@@ -93,35 +91,6 @@ export async function detectUserRole(email: string): Promise<UserRole> {
 
   // Default: support (lowest permission)
   return "support";
-}
-
-export async function sendOtp(email: string) {
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: true },
-  });
-  if (error) throw error;
-}
-
-export async function verifyOtpAndSetPassword(email: string, token: string, password: string) {
-  const { data, error } = await supabase.auth.verifyOtp({
-    email,
-    token,
-    type: "email",
-  });
-  if (error) throw error;
-
-  const isAdmin = email === ALLOWED_EMAIL;
-  const { data: updateData, error: updateError } = await supabase.auth.updateUser({
-    password,
-    data: {
-      username: isAdmin ? OWNER_NAME : email.split("@")[0],
-      phone: isAdmin ? OWNER_PHONE : "",
-    },
-  });
-  if (updateError) throw updateError;
-
-  return updateData.user;
 }
 
 export async function signInWithPassword(email: string, password: string) {

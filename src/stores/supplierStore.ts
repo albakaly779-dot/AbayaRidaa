@@ -3,6 +3,33 @@ import { supabase } from "@/lib/supabase";
 import type { Supplier, SupplierTransaction } from "@/types";
 import { toast } from "sonner";
 
+type SupplierRow = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  company: string;
+  city: string;
+  notes: string;
+  created_at?: string;
+};
+
+type SupplierTransactionRow = {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  type: SupplierTransaction["type"];
+  amount: number | string;
+  pieces: number | string;
+  fabric_type: string;
+  fabric_unit?: string;
+  fabric_quantity?: number | string;
+  date: string;
+  notes: string;
+};
+
+type SupplierUpdate = Partial<Pick<Supplier, "name" | "phone" | "company" | "city" | "notes">>;
+
 interface SupplierState {
   suppliers: Supplier[];
   transactions: SupplierTransaction[];
@@ -32,10 +59,10 @@ export const useSupplierStore = create<SupplierState>()((set, get) => ({
       supabase.from("suppliers").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
       supabase.from("supplier_transactions").select("*").order("date", { ascending: false }),
     ]);
-    const suppliers = (supRes.data || []).map((s: any) => ({
+    const suppliers = (supRes.data || []).map((s: SupplierRow) => ({
       id: s.id, name: s.name, phone: s.phone, email: s.email, company: s.company, city: s.city, notes: s.notes, createdAt: s.created_at?.split("T")[0] || "",
     }));
-    const transactions = (txRes.data || []).map((t: any) => ({
+    const transactions = (txRes.data || []).map((t: SupplierTransactionRow) => ({
       id: t.id, supplierId: t.supplier_id, supplierName: t.supplier_name, type: t.type,
       amount: Number(t.amount), pieces: t.pieces, fabricType: t.fabric_type,
       fabricUnit: t.fabric_unit || "متر", fabricQuantity: Number(t.fabric_quantity || 0),
@@ -54,7 +81,7 @@ export const useSupplierStore = create<SupplierState>()((set, get) => ({
   },
 
   updateSupplier: async (id, data) => {
-    const payload: any = {};
+    const payload: SupplierUpdate = {};
     if (data.name) payload.name = data.name;
     if (data.phone) payload.phone = data.phone;
     if (data.company) payload.company = data.company;

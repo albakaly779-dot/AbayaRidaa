@@ -1,61 +1,41 @@
-# Welcome to your OnSpace project
+# AbayaRidaa ERP
 
-## How can I edit this code?
+نظام **رداء** هو تطبيق ويب لإدارة مبيعات العبايات والعملاء والطلبات والمدفوعات والمديونيات والمناديب والمصروفات والتقارير. الواجهة عربية باتجاه RTL، ويعتمد التطبيق على React وTypeScript وVite وTailwind CSS وSupabase للمصادقة والبيانات والتخزين.
 
-There are several ways of editing your application.
+## التشغيل المحلي
 
-**Use OnSpace**
+يتطلب المشروع Node.js 18 أو أحدث وnpm. بعد استنساخ المستودع، أنشئ ملف `.env` من `.env.example` وأدخل بيانات مشروع Supabase الخاصة بك. لا تضع مفاتيح الخدمة أو أي أسرار خادمية داخل الواجهة؛ المتغيرات التي تبدأ بـ `VITE_` تصل إلى المتصفح ويجب أن تكون مخصصة للاستخدام العام فقط.
 
-Simply visit the [OnSpace Project]() and start prompting.
-
-Changes made via OnSpace will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in OnSpace.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm ci
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+يفتح خادم Vite عادةً على `http://localhost:8080` وفق إعدادات البيئة الحالية. لإيقاف الخادم استخدم `Ctrl+C`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## أوامر الجودة والتحقق
 
-**Use GitHub Codespaces**
+يستخدم المشروع مجموعة أوامر موحدة لتقليل أخطاء النشر. الأمر `typecheck` يفحص TypeScript دون إنشاء ملفات، و`lint` يفحص قواعد ESLint، بينما يجمع `verify` الفحوصات الثلاثة في مسار واحد.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+| الأمر | الغرض |
+|---|---|
+| `npm run typecheck` | فحص الأنواع دون إصدار ملفات بناء |
+| `npm run lint` | فحص جودة الكود وقواعد React Hooks |
+| `npm run build` | إنشاء نسخة الإنتاج |
+| `npm run verify` | تشغيل TypeScript وESLint والبناء بالتتابع |
 
-## What technologies are used for this project?
+## البنية الرئيسية
 
-This project is built with:
+توجد المسارات داخل `src/App.tsx`، وتُبنى الواجهة المصادق عليها داخل `src/components/layout/AppLayout.tsx`. صفحات النظام موجودة في `src/pages`، والمكونات المشتركة في `src/components`، بينما تُدار بيانات الأعمال عبر متاجر Zustand في `src/stores`. طبقة المصادقة موجودة في `src/lib/auth.ts` و`src/hooks/useAuth.ts`.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+يعتمد النظام على أدوار متعددة، من بينها المدير العام ومدير العمليات والمحاسب والدعم والمندوب والشريك. الحماية موجودة على مستويين: حارس الجلسة، وحارس صلاحيات للمسارات الإدارية، إضافة إلى سياسات RLS في Supabase. إنشاء الحسابات يتم من خلال المشرف العام، وليس عبر التسجيل الذاتي.
 
-## How can I deploy this project?
+## Supabase وEdge Functions
 
-Simply open [OnSpace]() and click on Share -> Publish.
+يحتاج التطبيق إلى جداول Supabase وسياسات RLS والـ Edge Functions الموجودة في `supabase/functions`. بعد ربط مشروع Supabase، انشر الوظائف المطلوبة من خلال دليل النشر الموجود في [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md). يجب اختبار البريد SMTP باستخدام App Password، والتحقق من رفض محاولات تصعيد الصلاحيات من المستخدمين غير الإداريين.
+
+## ملاحظات أمنية وتشغيلية
+
+لا تلتزم بملف `.env` في Git؛ الملف المتعقّب استُبدل بنموذج `.env.example`. كما أن عمليات إنشاء الطلبات والدفعات تتحقق من نتيجة الحفظ قبل تحديث الحالة أو إرسال الإشعارات، ويتم ربط عمولة المندوب بالطلب المنشأ فعليًا.
+
+تظل فحوصات الطباعة الحرارية وتسليم البريد الفعلي واختبارات RLS على مشروع Supabase الإنتاجي بحاجة إلى تنفيذ في بيئة النشر، لأنها تعتمد على أجهزة أو بيانات اعتماد لا ينبغي تضمينها في المستودع.

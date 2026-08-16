@@ -64,7 +64,7 @@ export default function PaymentDialog({ open, onClose, orderId, customerId, cust
       receiptUrl = urlData.publicUrl;
     }
 
-    addPayment({
+    const savedPayment = await addPayment({
       orderId, customerId, customerName, amount, method,
       date: new Date().toISOString().split("T")[0],
       notes,
@@ -72,6 +72,11 @@ export default function PaymentDialog({ open, onClose, orderId, customerId, cust
       recordedById: user.id,
       recordedByName: user.username || user.email?.split("@")[0] || "المستخدم",
     }, user.id);
+
+    if (!savedPayment) {
+      setUploading(false);
+      return;
+    }
 
     const order = orders.find((o) => o.id === orderId);
     if (order) {
@@ -101,7 +106,7 @@ export default function PaymentDialog({ open, onClose, orderId, customerId, cust
           <div>
             <label className="mb-1.5 block text-sm font-semibold text-gray-700">المبلغ المدفوع</label>
             <input type="number" min="0" max={remaining} value={amount}
-              onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => setAmount(Math.min(remaining, Math.max(0, parseFloat(e.target.value) || 0)))}
               className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/20" />
           </div>
           <div>

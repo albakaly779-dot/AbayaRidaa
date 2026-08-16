@@ -1,7 +1,9 @@
-// Delete the old mock data file - data now comes from real database
-export const mockCustomers: any[] = [];
-export const mockOrders: any[] = [];
-export const mockPayments: any[] = [];
+import type { Customer, Order, Payment } from "@/types";
+
+// Legacy compatibility exports; production data comes from Supabase.
+export const mockCustomers: Customer[] = [];
+export const mockOrders: Order[] = [];
+export const mockPayments: Payment[] = [];
 export const mockMonthlySales = [
   { month: "سبتمبر", sales: 0, orders: 0 },
   { month: "أكتوبر", sales: 0, orders: 0 },

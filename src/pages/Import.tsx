@@ -181,8 +181,9 @@ export default function Import() {
       }
 
       setStep("done");
-    } catch (err: any) {
-      toast.error("فشل الاستيراد: " + (err?.message || "خطأ غير معروف"));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "خطأ غير معروف";
+      toast.error("فشل الاستيراد: " + message);
     }
     setImporting(false);
   };

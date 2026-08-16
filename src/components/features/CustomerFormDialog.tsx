@@ -61,9 +61,7 @@ export default function CustomerFormDialog({ open, onClose }: Props) {
 
     setLoading(true);
 
-    // Insert directly to include source and added_by fields
-    const { data: row, error } = await supabase.from("customers").insert({
-      user_id: user.id,
+    const newCustomer = await addCustomer({
       name,
       phone: phone.replace(/\D/g, ""),
       email: "",
@@ -71,12 +69,11 @@ export default function CustomerFormDialog({ open, onClose }: Props) {
       address,
       notes,
       source,
-      added_by_id: user.id,
-      added_by_name: user.username || user.email,
-    }).select().single();
+      addedById: user.id,
+      addedByName: user.username || user.email,
+    }, user.id);
 
-    if (error) {
-      toast.error("فشل إضافة العميل: " + error.message);
+    if (!newCustomer) {
       setLoading(false);
       return;
     }
@@ -109,8 +106,6 @@ export default function CustomerFormDialog({ open, onClose }: Props) {
     onClose();
     setName(""); setPhone(""); setCity(""); setAddress(""); setSource(""); setNotes("");
 
-    // Force reload customers
-    window.location.reload();
   };
 
   return (

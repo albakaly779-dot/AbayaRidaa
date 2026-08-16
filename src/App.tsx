@@ -44,6 +44,7 @@ import EmailTemplates from "@/pages/EmailTemplates";
 import Approvals from "@/pages/Approvals";
 import Sessions from "@/pages/Sessions";
 import SmartBackups from "@/pages/SmartBackups";
+import type { UserRole } from "@/lib/auth";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -68,6 +69,15 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function PermissionRoute({ roles, children }: { roles: UserRole[]; children: React.ReactNode }) {
+  const { role } = useAuth();
+  if (!roles.includes(role)) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+const ADMIN_ROLES: UserRole[] = ["admin"];
+const OPERATIONS_ROLES: UserRole[] = ["admin", "operations"];
+
 function PasswordChangeGuard({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (user?.mustChangePassword && window.location.pathname !== "/change-password") {
@@ -84,46 +94,46 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
         <Route path="/rep-dashboard" element={<ProtectedRoute><PasswordChangeGuard><RepDashboard /></PasswordChangeGuard></ProtectedRoute>} />
+        <Route path="/partner-dashboard" element={<ProtectedRoute><PasswordChangeGuard><PartnerDashboard /></PasswordChangeGuard></ProtectedRoute>} />
         <Route path="/" element={<ProtectedRoute><PasswordChangeGuard><AdminRoute><AppLayout /></AdminRoute></PasswordChangeGuard></ProtectedRoute>}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="executive-dashboard" element={<ExecutiveDashboard />} />
-          <Route path="partner-dashboard" element={<PartnerDashboard />} />
-          <Route path="orders" element={<Orders />} />
+          <Route path="executive-dashboard" element={<PermissionRoute roles={ADMIN_ROLES}><ExecutiveDashboard /></PermissionRoute>} />
+          <Route path="orders" element={<PermissionRoute roles={OPERATIONS_ROLES}><Orders /></PermissionRoute>} />
           <Route path="customers" element={<Customers />} />
           <Route path="customers/:id" element={<CustomerProfile />} />
-          <Route path="phone-validator" element={<PhoneValidator />} />
-          <Route path="products" element={<Products />} />
-          <Route path="debts" element={<Debts />} />
-          <Route path="suppliers" element={<Suppliers />} />
-          <Route path="returns" element={<Returns />} />
-          <Route path="expenses" element={<Expenses />} />
-          <Route path="reps" element={<Reps />} />
-          <Route path="rep-performance" element={<RepPerformance />} />
+          <Route path="phone-validator" element={<PermissionRoute roles={ADMIN_ROLES}><PhoneValidator /></PermissionRoute>} />
+          <Route path="products" element={<PermissionRoute roles={OPERATIONS_ROLES}><Products /></PermissionRoute>} />
+          <Route path="debts" element={<PermissionRoute roles={ADMIN_ROLES}><Debts /></PermissionRoute>} />
+          <Route path="suppliers" element={<PermissionRoute roles={ADMIN_ROLES}><Suppliers /></PermissionRoute>} />
+          <Route path="returns" element={<PermissionRoute roles={OPERATIONS_ROLES}><Returns /></PermissionRoute>} />
+          <Route path="expenses" element={<PermissionRoute roles={ADMIN_ROLES}><Expenses /></PermissionRoute>} />
+          <Route path="reps" element={<PermissionRoute roles={ADMIN_ROLES}><Reps /></PermissionRoute>} />
+          <Route path="rep-performance" element={<PermissionRoute roles={ADMIN_ROLES}><RepPerformance /></PermissionRoute>} />
           <Route path="rep-activity/:repId" element={<RepActivity />} />
-          <Route path="rep-pricing" element={<RepPricing />} />
-          <Route path="receipts" element={<Receipts />} />
+          <Route path="rep-pricing" element={<PermissionRoute roles={ADMIN_ROLES}><RepPricing /></PermissionRoute>} />
+          <Route path="receipts" element={<PermissionRoute roles={ADMIN_ROLES}><Receipts /></PermissionRoute>} />
           <Route path="invoice/:orderId" element={<Invoice />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="reports-automation" element={<ReportsAutomation />} />
-          <Route path="product-profitability" element={<ProductProfitability />} />
+          <Route path="reports" element={<PermissionRoute roles={ADMIN_ROLES}><Reports /></PermissionRoute>} />
+          <Route path="reports-automation" element={<PermissionRoute roles={ADMIN_ROLES}><ReportsAutomation /></PermissionRoute>} />
+          <Route path="product-profitability" element={<PermissionRoute roles={ADMIN_ROLES}><ProductProfitability /></PermissionRoute>} />
           <Route path="invoice-preview" element={<InvoicePreview />} />
-          <Route path="invoice-templates" element={<InvoiceTemplatesCustom />} />
-          <Route path="partners" element={<Partners />} />
-          <Route path="activity-analytics" element={<ActivityAnalytics />} />
-          <Route path="email-templates" element={<EmailTemplates />} />
-          <Route path="approvals" element={<Approvals />} />
+          <Route path="invoice-templates" element={<PermissionRoute roles={ADMIN_ROLES}><InvoiceTemplatesCustom /></PermissionRoute>} />
+          <Route path="partners" element={<PermissionRoute roles={ADMIN_ROLES}><Partners /></PermissionRoute>} />
+          <Route path="activity-analytics" element={<PermissionRoute roles={ADMIN_ROLES}><ActivityAnalytics /></PermissionRoute>} />
+          <Route path="email-templates" element={<PermissionRoute roles={ADMIN_ROLES}><EmailTemplates /></PermissionRoute>} />
+          <Route path="approvals" element={<PermissionRoute roles={OPERATIONS_ROLES}><Approvals /></PermissionRoute>} />
           <Route path="sessions" element={<Sessions />} />
-          <Route path="smart-backups" element={<SmartBackups />} />
+          <Route path="smart-backups" element={<PermissionRoute roles={ADMIN_ROLES}><SmartBackups /></PermissionRoute>} />
           <Route path="user-activity/:email" element={<UserActivity />} />
-          <Route path="bulk-import-users" element={<BulkImportUsers />} />
-          <Route path="rules" element={<Rules />} />
-          <Route path="export" element={<ExportPage />} />
-          <Route path="import" element={<Import />} />
-          <Route path="roles" element={<Roles />} />
+          <Route path="bulk-import-users" element={<PermissionRoute roles={ADMIN_ROLES}><BulkImportUsers /></PermissionRoute>} />
+          <Route path="rules" element={<PermissionRoute roles={ADMIN_ROLES}><Rules /></PermissionRoute>} />
+          <Route path="export" element={<PermissionRoute roles={ADMIN_ROLES}><ExportPage /></PermissionRoute>} />
+          <Route path="import" element={<PermissionRoute roles={ADMIN_ROLES}><Import /></PermissionRoute>} />
+          <Route path="roles" element={<PermissionRoute roles={ADMIN_ROLES}><Roles /></PermissionRoute>} />
           <Route path="notifications" element={<Notifications />} />
-          <Route path="audit" element={<AuditLogs />} />
-          <Route path="settings" element={<Settings />} />
+          <Route path="audit" element={<PermissionRoute roles={ADMIN_ROLES}><AuditLogs /></PermissionRoute>} />
+          <Route path="settings" element={<PermissionRoute roles={ADMIN_ROLES}><Settings /></PermissionRoute>} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

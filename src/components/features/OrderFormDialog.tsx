@@ -45,8 +45,8 @@ export default function OrderFormDialog({ open, onClose }: Props) {
   if (!open) return null;
 
   const subtotal = items.reduce((s, i) => s + i.total, 0);
-  const total = subtotal - discount;
-  const remaining = total - paid;
+  const total = Math.max(0, subtotal - Math.max(0, discount));
+  const remaining = Math.max(0, total - Math.max(0, paid));
 
   const addItem = () => {
     setItems([...items, { id: generateId(), productCode: "", productName: "", quantity: 1, unitPrice: 0, buyPrice: 0, total: 0, codeInput: "" }]);
@@ -113,6 +113,7 @@ export default function OrderFormDialog({ open, onClose }: Props) {
       return;
     }
     if (items.some((i) => !i.productName)) { toast.error("يرجى اختيار المنتج لجميع العناصر"); return; }
+    if (items.some((i) => i.quantity <= 0 || i.unitPrice <= 0)) { toast.error("يجب أن تكون الكمية والسعر أكبر من صفر"); return; }
     if (!user?.id) return;
 
     let paymentStatus: PaymentStatus = "unpaid";
@@ -121,20 +122,23 @@ export default function OrderFormDialog({ open, onClose }: Props) {
 
     const rep = reps.find((r) => r.id === repId);
 
-    await addOrder({
+    const createdOrder = await addOrder({
       customerId: customer.id, customerName: customer.name, customerPhone: customer.phone,
       repId: rep?.id, repName: rep?.name,
       items: items.map(({ codeInput, ...rest }) => rest),
-      subtotal, discount, total, paid, remaining: Math.max(0, remaining),
+      subtotal, discount: Math.min(Math.max(0, discount), subtotal), total,
+      paid: Math.min(Math.max(0, paid), total), remaining,
       status: "pending" as OrderStatus, paymentStatus, notes,
       createdAt: new Date().toISOString().split("T")[0],
       dueDate: dueDate || new Date(Date.now() + 10 * 86400000).toISOString().split("T")[0],
     }, user.id);
 
+    if (!createdOrder) return;
+
     if (rep) {
       const commissionAmount = total * (rep.commissionRate / 100);
-      useRepStore.getState().addCommission({
-        repId: rep.id, repName: rep.name, orderId: "", orderNumber: "",
+      await useRepStore.getState().addCommission({
+        repId: rep.id, repName: rep.name, orderId: createdOrder.id, orderNumber: createdOrder.orderNumber,
         orderTotal: total, commissionAmount, shippingDeduction: 0, netCommission: commissionAmount,
         isPaid: false, date: new Date().toISOString().split("T")[0], notes: "",
       });
@@ -305,12 +309,12 @@ export default function OrderFormDialog({ open, onClose }: Props) {
           <div className="grid grid-cols-3 gap-3 sm:gap-4">
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-gray-700">الخصم</label>
-              <input type="number" min="0" value={discount} onChange={(e) => setDiscount(parseFloat(e.target.value) || 0)}
+              <input type="number" min="0" max={subtotal} value={discount} onChange={(e) => setDiscount(Math.min(subtotal, Math.max(0, parseFloat(e.target.value) || 0)))}
                 className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none" />
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-semibold text-gray-700">المدفوع</label>
-              <input type="number" min="0" value={paid} onChange={(e) => setPaid(parseFloat(e.target.value) || 0)}
+              <input type="number" min="0" max={total} value={paid} onChange={(e) => setPaid(Math.min(total, Math.max(0, parseFloat(e.target.value) || 0)))}
                 className="w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-gold focus:outline-none" />
             </div>
             <div className="flex flex-col justify-end">

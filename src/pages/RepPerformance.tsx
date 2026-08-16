@@ -27,6 +27,13 @@ interface RepStats {
   sources: Record<string, number>;
 }
 
+type CustomerRepRow = {
+  added_by_id?: string | null;
+  added_by_name?: string | null;
+  source?: string | null;
+  created_at?: string | null;
+};
+
 export default function RepPerformance() {
   const { user } = useAuth();
   const { reps, initializeData: initReps } = useRepStore();
@@ -59,7 +66,7 @@ export default function RepPerformance() {
 
     const statsMap = new Map<string, RepStats>();
 
-    allCustomers.forEach((c: any) => {
+    allCustomers.forEach((c: CustomerRepRow) => {
       const repName = c.added_by_name || "المدير";
       const repId = c.added_by_id || "admin";
       if (!statsMap.has(repId)) {

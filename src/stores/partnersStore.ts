@@ -48,7 +48,7 @@ export const usePartnersStore = create<PartnersState>()((set, get) => ({
   refreshPartners: async (userId: string) => {
     const { data } = await supabase.from("partners_config").select("*").eq("user_id", userId).order("partner_key");
 
-    let partners: Partner[] = (data || []).map((r: { id: string; partner_key: string; partner_name: string; partner_email: string; percentage: string; is_active: boolean; notes: string }) => ({
+    const partners: Partner[] = (data || []).map((r: { id: string; partner_key: string; partner_name: string; partner_email: string; percentage: string; is_active: boolean; notes: string }) => ({
       id: r.id,
       partnerKey: r.partner_key as Partner["partnerKey"],
       partnerName: r.partner_name,

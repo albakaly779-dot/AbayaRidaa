@@ -46,13 +46,13 @@ export default function Customers() {
       initializeData(user.id);
       initNotifications(user.id);
     }
-  }, [user?.id]);
+  }, [user?.id, initializeData, initNotifications]);
 
   // Get unique rep names for filter
   const repNames = useMemo(() => {
     const names = new Set<string>();
     customers.forEach((c) => {
-      if ((c as any).addedByName) names.add((c as any).addedByName);
+      if (c.addedByName) names.add(c.addedByName);
     });
     return Array.from(names);
   }, [customers]);
@@ -60,8 +60,8 @@ export default function Customers() {
   const filtered = useMemo(() => {
     return customers.filter((c) => {
       const matchSearch = !search || c.name.includes(search) || c.phone.includes(search) || c.city.includes(search);
-      const matchSource = !sourceFilter || (c as any).source === sourceFilter;
-      const matchRep = !repFilter || (c as any).addedByName === repFilter;
+      const matchSource = !sourceFilter || c.source === sourceFilter;
+      const matchRep = !repFilter || c.addedByName === repFilter;
       return matchSearch && matchSource && matchRep;
     });
   }, [customers, search, sourceFilter, repFilter]);
@@ -212,14 +212,14 @@ export default function Customers() {
 
               {/* Source & Added by info */}
               <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                {(customer as any).source && (
+                {customer.source && (
                   <span className="text-[10px] font-semibold bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">
-                    {SOURCE_LABELS[(customer as any).source] || (customer as any).source}
+                    {SOURCE_LABELS[customer.source] || customer.source}
                   </span>
                 )}
-                {(customer as any).addedByName && (
+                {customer.addedByName && (
                   <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 rounded px-1.5 py-0.5 flex items-center gap-0.5">
-                    <User2 className="size-2.5" /> {(customer as any).addedByName}
+                    <User2 className="size-2.5" /> {customer.addedByName}
                   </span>
                 )}
               </div>

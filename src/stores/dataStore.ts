@@ -11,14 +11,14 @@ interface DataState {
   loading: boolean;
   initialized: boolean;
   initializeData: (userId: string) => Promise<void>;
-  addCustomer: (customer: Omit<Customer, "id" | "createdAt">, userId: string) => Promise<void>;
+  addCustomer: (customer: Omit<Customer, "id" | "createdAt">, userId: string) => Promise<Customer | null>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => void;
-  addOrder: (order: Omit<Order, "id" | "orderNumber">, userId: string) => Promise<void>;
+  addOrder: (order: Omit<Order, "id" | "orderNumber">, userId: string) => Promise<Order | null>;
   updateOrder: (id: string, data: Partial<Order>) => void;
   updateOrderStatus: (id: string, status: Order["status"]) => void;
   deleteOrder: (id: string) => void;
-  addPayment: (payment: Omit<Payment, "id">, userId: string) => void;
+  addPayment: (payment: Omit<Payment, "id">, userId: string) => Promise<Payment | null>;
   getCustomerDebt: (customerId: string) => number;
   getCustomerOrders: (customerId: string) => Order[];
   getTotalDebt: () => number;
@@ -82,10 +82,18 @@ export const useDataStore = create<DataState>()((set, get) => ({
     const { data: row, error } = await supabase.from("customers").insert({
       user_id: userId, name: data.name, phone: data.phone, email: data.email || "",
       city: data.city || "", address: data.address || "", notes: data.notes || "",
+      source: data.source || "", added_by_id: data.addedById || userId,
+      added_by_name: data.addedByName || "",
     }).select().single();
-    if (error) { toast.error("فشل إضافة العميل: " + error.message); return; }
-    const newC: Customer = { id: row.id, name: row.name, phone: row.phone, email: row.email, city: row.city, address: row.address, notes: row.notes, createdAt: row.created_at?.split("T")[0] || "" };
+    if (error) { toast.error("فشل إضافة العميل: " + error.message); return null; }
+    const newC: Customer = {
+      id: row.id, name: row.name, phone: row.phone, email: row.email, city: row.city,
+      address: row.address, notes: row.notes, source: row.source || "",
+      addedById: row.added_by_id || userId, addedByName: row.added_by_name || "",
+      createdAt: row.created_at?.split("T")[0] || "",
+    };
     set((s) => ({ customers: [newC, ...s.customers] }));
+    return newC;
   },
 
   updateCustomer: async (id, data) => {
@@ -115,20 +123,26 @@ export const useDataStore = create<DataState>()((set, get) => ({
       rep_id: orderData.repId, rep_name: orderData.repName,
     }).select().single();
 
-    if (error) { toast.error("فشل إنشاء الطلب: " + error.message); return; }
+    if (error) { toast.error("فشل إنشاء الطلب: " + error.message); return null; }
 
     if (orderData.items.length > 0) {
-      await supabase.from("order_items").insert(
+      const { error: itemsError } = await supabase.from("order_items").insert(
         orderData.items.map((i) => ({
           order_id: row.id, product_code: i.productCode || "", product_name: i.productName,
           quantity: i.quantity, unit_price: i.unitPrice, buy_price: i.buyPrice || 0, total: i.total,
         }))
       );
+      if (itemsError) {
+        await supabase.from("orders").delete().eq("id", row.id);
+        toast.error("فشل حفظ عناصر الطلب: " + itemsError.message);
+        return null;
+      }
     }
 
     for (const item of orderData.items) {
       if (item.productCode) {
-        await supabase.rpc("decrement_stock", { p_code: item.productCode, p_qty: item.quantity }).then(() => {});
+        const { error: stockError } = await supabase.rpc("decrement_stock", { p_code: item.productCode, p_qty: item.quantity });
+        if (stockError) console.warn("تعذر تحديث مخزون المنتج:", stockError.message);
       }
     }
 
@@ -143,6 +157,7 @@ export const useDataStore = create<DataState>()((set, get) => ({
       createdAt: row.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
     };
     set((s) => ({ orders: [newOrder, ...s.orders] }));
+    return newOrder;
   },
 
   updateOrder: async (id, data) => {
@@ -176,21 +191,34 @@ export const useDataStore = create<DataState>()((set, get) => ({
       recorded_by_id: paymentData.recordedById || userId,
       recorded_by_name: paymentData.recordedByName || "",
     }).select().single();
-    if (error) { toast.error("فشل تسجيل الدفعة"); return; }
+    if (error) { toast.error("فشل تسجيل الدفعة: " + error.message); return null; }
 
     const newPayment: Payment = { id: row.id, ...paymentData };
-    set((state) => {
-      const order = state.orders.find((o) => o.id === paymentData.orderId);
-      if (!order) return { payments: [newPayment, ...state.payments] };
-      const newPaid = order.paid + paymentData.amount;
-      const newRemaining = Math.max(0, order.total - newPaid);
-      const paymentStatus = newRemaining === 0 ? "paid" as const : "partial" as const;
-      supabase.from("orders").update({ paid: newPaid, remaining: newRemaining, payment_status: paymentStatus }).eq("id", paymentData.orderId);
-      return {
-        payments: [newPayment, ...state.payments],
-        orders: state.orders.map((o) => o.id === paymentData.orderId ? { ...o, paid: newPaid, remaining: newRemaining, paymentStatus } : o),
-      };
-    });
+    const order = get().orders.find((o) => o.id === paymentData.orderId);
+    if (!order) {
+      set((state) => ({ payments: [newPayment, ...state.payments] }));
+      return newPayment;
+    }
+
+    const newPaid = Math.min(order.total, order.paid + paymentData.amount);
+    const newRemaining = Math.max(0, order.total - newPaid);
+    const paymentStatus = newRemaining === 0 ? "paid" as const : "partial" as const;
+    const { error: orderError } = await supabase.from("orders").update({
+      paid: newPaid, remaining: newRemaining, payment_status: paymentStatus,
+    }).eq("id", paymentData.orderId);
+    if (orderError) {
+      await supabase.from("payments").delete().eq("id", row.id);
+      toast.error("فشل تحديث حالة الطلب: " + orderError.message);
+      return null;
+    }
+
+    set((state) => ({
+      payments: [newPayment, ...state.payments],
+      orders: state.orders.map((o) => o.id === paymentData.orderId
+        ? { ...o, paid: newPaid, remaining: newRemaining, paymentStatus }
+        : o),
+    }));
+    return newPayment;
   },
 
   getCustomerDebt: (customerId) => get().orders.filter((o) => o.customerId === customerId && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0),

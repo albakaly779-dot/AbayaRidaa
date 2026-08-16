@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { UserPlus, Package, Calendar, CheckCircle, Loader2, ImagePlus, X, Send, MessageSquare, BarChart3, TrendingUp, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -30,6 +30,21 @@ interface RepEntry {
   createdAt: string;
 }
 
+type CustomerRow = {
+  id: string;
+  name: string;
+  phone: string;
+  city: string;
+  notes?: string | null;
+  source?: string | null;
+  created_at?: string | null;
+};
+
+type CommissionRow = {
+  net_commission: number | string;
+  is_paid: boolean;
+};
+
 export default function RepDashboard() {
   const { user, logout } = useAuth();
   const { initializeData } = useDataStore();
@@ -51,15 +66,7 @@ export default function RepDashboard() {
   // Stats
   const [stats, setStats] = useState({ thisMonth: 0, total: 0, commissions: 0 });
 
-  useEffect(() => {
-    if (user?.id) {
-      initializeData(user.id);
-      loadEntries();
-      loadStats();
-    }
-  }, [user?.id]);
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     const { data } = await supabase.from("customers")
       .select("*")
       .eq("added_by_id", user?.id || "")
@@ -67,7 +74,7 @@ export default function RepDashboard() {
       .limit(20);
     
     if (data) {
-      setEntries(data.map((c: any) => ({
+      setEntries(data.map((c: CustomerRow) => ({
         id: c.id,
         customerName: c.name,
         customerPhone: c.phone,
@@ -80,9 +87,9 @@ export default function RepDashboard() {
         createdAt: c.created_at,
       })));
     }
-  };
+  }, [user?.id]);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     if (!user?.id) return;
     const now = new Date();
     const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
@@ -95,10 +102,17 @@ export default function RepDashboard() {
 
     const total = allRes.count || 0;
     const thisMonth = monthRes.count || 0;
-    const commissions = (commRes.data || []).filter((c: any) => !c.is_paid).reduce((s: number, c: any) => s + Number(c.net_commission), 0);
+    const commissions = (commRes.data || []).filter((c: CommissionRow) => !c.is_paid).reduce((s: number, c: CommissionRow) => s + Number(c.net_commission), 0);
 
     setStats({ thisMonth, total, commissions });
-  };
+  }, [user?.id, user?.username]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    initializeData(user.id);
+    void loadEntries();
+    void loadStats();
+  }, [user?.id, initializeData, loadEntries, loadStats]);
 
   // Weekly chart data
   const chartData = useMemo(() => {
