@@ -9,12 +9,14 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useSettingsStore } from "@/stores/settingsStore";
 import brandLogo from "@/assets/brand-logo.webp";
+import { hasPermission, type Permission } from "@/lib/permissions";
 
 interface NavItem {
   path: string;
   label: string;
   icon: typeof LayoutDashboard;
   roles?: string[];
+  permission?: Permission;
   section?: string;
 }
 
@@ -28,6 +30,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { path: "/customers", label: "العملاء", icon: Users, section: "العمليات" },
   { path: "/phone-validator", label: "فحص الأرقام", icon: PhoneCall, roles: ["admin"], section: "العمليات" },
   { path: "/products", label: "المنتجات والمخزون", icon: Package, roles: ["admin", "operations"], section: "العمليات" },
+  { path: "/production", label: "الإنتاج اليومي", icon: ClipboardList, permission: "production.view", section: "العمليات" },
   { path: "/debts", label: "المديونيات", icon: AlertTriangle, roles: ["admin"], section: "العمليات" },
   { path: "/suppliers", label: "الموردون", icon: Truck, roles: ["admin"], section: "العمليات" },
   { path: "/returns", label: "المرتجعات", icon: RotateCcw, roles: ["admin", "operations"], section: "العمليات" },
@@ -47,8 +50,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { path: "/notifications", label: "الإشعارات", icon: Bell, section: "النظام" },
   { path: "/export", label: "التصدير", icon: Download, roles: ["admin"], section: "النظام" },
   { path: "/import", label: "استيراد البيانات", icon: Upload, roles: ["admin"], section: "النظام" },
-  { path: "/roles", label: "الصلاحيات", icon: Shield, roles: ["admin"], section: "النظام" },
-  { path: "/audit", label: "سجل الأحداث", icon: ClipboardList, roles: ["admin"], section: "النظام" },
+  { path: "/roles", label: "الصلاحيات", icon: Shield, permission: "users.manage", section: "النظام" },
+  { path: "/audit", label: "سجل الأحداث", icon: ClipboardList, permission: "audit.view", section: "النظام" },
   { path: "/invoice-templates", label: "قوالب الفواتير", icon: FileImage, roles: ["admin"], section: "النظام" },
   { path: "/email-templates", label: "قوالب البريد", icon: Mail, roles: ["admin"], section: "النظام" },
   { path: "/approvals", label: "نظام الموافقات", icon: ShieldCheck, roles: ["admin", "operations"], section: "النظام" },
@@ -77,6 +80,7 @@ export default function Sidebar({ mobileOpen, onClose }: Props) {
   const displayName = settings.businessName || "رداء";
 
   const navItems = ALL_NAV_ITEMS.filter((item) => {
+    if (item.permission) return hasPermission(role as Parameters<typeof hasPermission>[0], item.permission);
     if (!item.roles) return true;
     if (role === "admin") return true;
     return item.roles.includes(role);

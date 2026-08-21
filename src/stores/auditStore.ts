@@ -1,4 +1,3 @@
-import { create } from "zustand";
 import { supabase } from "@/lib/supabase";
 
 export interface AuditLog {
@@ -8,18 +7,15 @@ export interface AuditLog {
   entityId?: string;
   details: string;
   createdAt: string;
+  result?: "SUCCESS" | "DENIED" | "FAILED" | "ROLLED_BACK";
+  requestId?: string;
+  entryHash?: string;
+  previousHash?: string;
+  keyId?: string;
+  verified?: boolean;
   ipAddress?: string;
   userAgent?: string;
   deviceInfo?: string;
-}
-
-function getDeviceInfo(): string {
-  if (typeof navigator === "undefined") return "";
-  const ua = navigator.userAgent;
-  const isMobile = /Mobile|Android|iPhone|iPad/i.test(ua);
-  const browser = /Chrome/.test(ua) ? "Chrome" : /Firefox/.test(ua) ? "Firefox" : /Safari/.test(ua) ? "Safari" : /Edge/.test(ua) ? "Edge" : "غير معروف";
-  const os = /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : /Android/.test(ua) ? "Android" : /iOS|iPhone|iPad/.test(ua) ? "iOS" : "غير معروف";
-  return `${browser} · ${os} · ${isMobile ? "جوال" : "سطح مكتب"}`;
 }
 
 interface AuditState {
@@ -30,32 +26,90 @@ interface AuditState {
   logAction: (userId: string, action: string, entityType: string, entityId: string | undefined, details: string) => Promise<void>;
 }
 
+function mapSecureRow(row: Record<string, unknown>): AuditLog {
+  const after = row.after_data as Record<string, unknown> | null;
+  const changes = row.changes_data as Record<string, unknown> | null;
+  const details = typeof after?.details === "string"
+    ? after.details
+    : typeof changes?.details === "string"
+      ? changes.details
+      : String(row.reason || row.action || "");
+  return {
+    id: String(row.event_id || row.id),
+    action: String(row.action || "unknown"),
+    entityType: String(row.entity_type || "system"),
+    entityId: row.entity_id ? String(row.entity_id) : undefined,
+    details,
+    createdAt: String(row.occurred_at || row.created_at),
+    result: (row.result as AuditLog["result"]) || "SUCCESS",
+    requestId: row.request_id ? String(row.request_id) : undefined,
+    entryHash: row.entry_hash ? String(row.entry_hash) : undefined,
+    previousHash: row.previous_hash ? String(row.previous_hash) : undefined,
+    keyId: row.key_id ? String(row.key_id) : undefined,
+    verified: Boolean(row.entry_hash && row.previous_hash),
+  };
+}
+
+function mapLegacyRow(row: Record<string, unknown>): AuditLog {
+  return {
+    id: String(row.id),
+    action: String(row.action || "unknown"),
+    entityType: String(row.entity_type || "system"),
+    entityId: row.entity_id ? String(row.entity_id) : undefined,
+    details: String(row.details || ""),
+    createdAt: String(row.created_at),
+    ipAddress: row.ip_address ? String(row.ip_address) : "",
+    userAgent: row.user_agent ? String(row.user_agent) : "",
+    deviceInfo: row.device_info ? String(row.device_info) : "",
+  };
+}
+
 export const useAuditStore = create<AuditState>()((set, get) => ({
   logs: [],
   loading: true,
   initialized: false,
 
-  initializeLogs: async (userId: string) => {
+  initializeLogs: async () => {
     if (get().initialized) return;
-    const { data } = await supabase.from("audit_logs").select("*").eq("user_id", userId).order("created_at", { ascending: false }).limit(200);
-    const logs = (data || []).map((r: AuditLog) => ({
-      id: r.id, action: r.action, entityType: r.entity_type,
-      entityId: r.entity_id, details: r.details, createdAt: r.created_at,
-      ipAddress: r.ip_address || "", userAgent: r.user_agent || "", deviceInfo: r.device_info || "",
-    }));
-    set({ logs, loading: false, initialized: true });
+    set({ loading: true });
+    const secure = await supabase
+      .from("audit_events")
+      .select("*")
+      .order("sequence", { ascending: false })
+      .limit(300);
+
+    if (!secure.error) {
+      set({ logs: (secure.data || []).map((row) => mapSecureRow(row as Record<string, unknown>)), loading: false, initialized: true });
+      return;
+    }
+
+    // Backward-compatible read-only fallback for older installations before the migration.
+    const legacy = await supabase.from("audit_logs").select("*").order("created_at", { ascending: false }).limit(200);
+    set({ logs: (legacy.data || []).map((row) => mapLegacyRow(row as Record<string, unknown>)), loading: false, initialized: true });
   },
 
-  logAction: async (userId, action, entityType, entityId, details) => {
-    const deviceInfo = getDeviceInfo();
-    const userAgent = typeof navigator !== "undefined" ? navigator.userAgent.substring(0, 200) : "";
-    const { data: row } = await supabase.from("audit_logs").insert({
-      user_id: userId, action, entity_type: entityType, entity_id: entityId || "", details,
-      device_info: deviceInfo, user_agent: userAgent, ip_address: "",
-    }).select().single();
+  logAction: async (_userId, action, entityType, entityId, details) => {
+    const requestId = crypto.randomUUID();
+    const { data, error } = await supabase.functions.invoke("audit-event", {
+      body: {
+        action,
+        event_type: "USER_ACTION",
+        entity_type: entityType,
+        entity_id: entityId || null,
+        request_id: requestId,
+        result: "SUCCESS",
+        after: { details },
+      },
+    });
+
+    if (error || !data?.success) {
+      console.warn("Secure audit event was not appended", error?.message || data?.error);
+      return;
+    }
+
+    const row = data.event as Record<string, unknown> | undefined;
     if (row) {
-      const newLog: AuditLog = { id: row.id, action, entityType, entityId, details, createdAt: row.created_at, deviceInfo, userAgent };
-      set((s) => ({ logs: [newLog, ...s.logs].slice(0, 200) }));
+      set((state) => ({ logs: [mapSecureRow(row), ...state.logs].slice(0, 300) }));
     }
   },
 }));

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import type { UserRole } from "@/lib/auth";
+import { hasPermission, type Permission } from "@/lib/permissions";
 
 const AppLayout = lazy(() => import("@/components/layout/AppLayout"));
 const Login = lazy(() => import("@/pages/Login"));
@@ -11,6 +12,7 @@ const Orders = lazy(() => import("@/pages/Orders"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const CustomerProfile = lazy(() => import("@/pages/CustomerProfile"));
 const Products = lazy(() => import("@/pages/Products"));
+const Production = lazy(() => import("@/pages/Production"));
 const Debts = lazy(() => import("@/pages/Debts"));
 const Suppliers = lazy(() => import("@/pages/Suppliers"));
 const Returns = lazy(() => import("@/pages/Returns"));
@@ -82,9 +84,10 @@ function AdminRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function PermissionRoute({ roles, children }: { roles: UserRole[]; children: ReactNode }) {
+function PermissionRoute({ roles, permission, children }: { roles?: UserRole[]; permission?: Permission; children: ReactNode }) {
   const { role } = useAuth();
-  if (!roles.includes(role)) return <Navigate to="/dashboard" replace />;
+  const allowed = permission ? hasPermission(role, permission) : Boolean(roles?.includes(role));
+  if (!allowed) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -118,6 +121,7 @@ export default function App() {
             <Route path="customers/:id" element={<CustomerProfile />} />
             <Route path="phone-validator" element={<PermissionRoute roles={ADMIN_ROLES}><PhoneValidator /></PermissionRoute>} />
             <Route path="products" element={<PermissionRoute roles={OPERATIONS_ROLES}><Products /></PermissionRoute>} />
+            <Route path="production" element={<PermissionRoute permission="production.view"><Production /></PermissionRoute>} />
             <Route path="debts" element={<PermissionRoute roles={ADMIN_ROLES}><Debts /></PermissionRoute>} />
             <Route path="suppliers" element={<PermissionRoute roles={ADMIN_ROLES}><Suppliers /></PermissionRoute>} />
             <Route path="returns" element={<PermissionRoute roles={OPERATIONS_ROLES}><Returns /></PermissionRoute>} />
@@ -144,9 +148,9 @@ export default function App() {
             <Route path="rules" element={<PermissionRoute roles={ADMIN_ROLES}><Rules /></PermissionRoute>} />
             <Route path="export" element={<PermissionRoute roles={ADMIN_ROLES}><ExportPage /></PermissionRoute>} />
             <Route path="import" element={<PermissionRoute roles={ADMIN_ROLES}><Import /></PermissionRoute>} />
-            <Route path="roles" element={<PermissionRoute roles={ADMIN_ROLES}><Roles /></PermissionRoute>} />
+            <Route path="roles" element={<PermissionRoute permission="users.manage"><Roles /></PermissionRoute>} />
             <Route path="notifications" element={<Notifications />} />
-            <Route path="audit" element={<PermissionRoute roles={ADMIN_ROLES}><AuditLogs /></PermissionRoute>} />
+            <Route path="audit" element={<PermissionRoute permission="audit.view"><AuditLogs /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute roles={ADMIN_ROLES}><Settings /></PermissionRoute>} />
           </Route>
           <Route path="*" element={<NotFound />} />
