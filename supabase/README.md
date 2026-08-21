@@ -143,3 +143,23 @@ unset SUPABASE_SERVICE_ROLE_KEY AUDIT_HMAC_KEY_B64
 ## 11. اختبار العبث والاستعادة
 
 في مشروع اختبار فقط، انسخ السجل إلى جدول تجريبي وغيّر قيمة `entry_hash` أو `canonical_payload` ثم شغّل أداة التحقق؛ يجب أن تفشل. لا تنفذ `UPDATE` أو `DELETE` على `public.audit_events` في الإنتاج. اختبر الأرشفة على مشروع تجريبي، ثم تحقق من أن `audit_events_archive` يحتفظ بالحمولة القانونية نفسها قبل اعتماد سياسة الاحتفاظ في الإنتاج.
+
+## 12. تفعيل GitHub Actions
+
+يحتوي المشروع على ثلاثة Workflows داخل `.github/workflows`: `ci.yml` للفحص على كل Pull Request وPush، و`deploy-supabase.yml` للنشر اليدوي أو عند إنشاء Tag يبدأ بـ `supabase-v`، و`audit-integrity.yml` للتحقق الدوري من سلسلة HMAC.
+
+أنشئ Environment باسم `production` في إعدادات المستودع، وفَعّل **Required reviewers** قبل السماح بالنشر. أضف الأسرار التالية إلى Environment وليس إلى متغيرات عامة:
+
+| Secret في GitHub | الاستخدام |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | مصادقة Supabase CLI للنشر |
+| `SUPABASE_PROJECT_REF` | معرّف مشروع Supabase |
+| `AUDIT_HMAC_KEY_B64` | مفتاح التحقق الحالي |
+| `AUDIT_HMAC_KEY_ID` | إصدار المفتاح الحالي |
+| `SMTP_PASSWORD` | سر SMTP الخادمي |
+| `SUPABASE_URL` | يستخدمه فحص سلامة السجل الدوري |
+| `SUPABASE_SERVICE_ROLE_KEY` | قراءة السجل للفحص الدوري فقط، ولا يستخدم في الواجهة |
+
+بعد إضافة Secrets، شغّل `CI` تلقائياً عبر Pull Request. لا تسمح بدمج Pull Request إذا فشل `npm run verify` أو اختبارات HMAC أو فحص الأسرار. لتشغيل النشر، افتح **Actions → Deploy Supabase → Run workflow** واختر `staging` أو `production`. بيئة `production` يجب أن تتطلب موافقة مراجع قبل التنفيذ.
+
+الفحص الدوري `Audit Integrity` يعمل أسبوعياً أو يدوياً. إذا ظهر `HMAC mismatch` أو `previous_hash mismatch`، أوقف النشر المالي، احتفظ بنسخة من السجل للتحقيق، ولا تعِد تشغيل Workflow بشكل أعمى؛ أصلح سبب الاختلاف أولاً.
