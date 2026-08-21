@@ -147,11 +147,15 @@ create table if not exists public.audit_events (
   before_data jsonb,
   after_data jsonb,
   changes_data jsonb,
+  canonical_payload jsonb not null default '{}'::jsonb,
   previous_hash text not null,
   entry_hash text not null,
   key_id text not null,
   occurred_at timestamptz not null default now()
 );
+
+alter table public.audit_events
+  add column if not exists canonical_payload jsonb not null default '{}'::jsonb;
 
 create unique index if not exists audit_events_tenant_sequence_idx
   on public.audit_events(tenant_key, sequence);
@@ -204,7 +208,7 @@ begin
   insert into public.audit_events (
     tenant_key, actor_user_id, request_id, correlation_id,
     action, event_type, entity_type, entity_id, source_type, source_id,
-    result, reason, before_data, after_data, changes_data,
+    result, reason, before_data, after_data, changes_data, canonical_payload,
     previous_hash, entry_hash, key_id, occurred_at
   )
   values (
@@ -223,6 +227,7 @@ begin
     p_event->'before',
     p_event->'after',
     p_event->'changes',
+    p_event,
     coalesce(v_previous_hash, 'GENESIS'),
     p_entry_hash,
     p_key_id,
@@ -283,12 +288,12 @@ begin
   insert into public.audit_events_archive (
     sequence, event_id, tenant_key, actor_user_id, request_id, correlation_id,
     action, event_type, entity_type, entity_id, source_type, source_id,
-    result, reason, before_data, after_data, changes_data,
+    result, reason, before_data, after_data, changes_data, canonical_payload,
     previous_hash, entry_hash, key_id, occurred_at, archive_batch_id
   )
   select sequence, event_id, tenant_key, actor_user_id, request_id, correlation_id,
     action, event_type, entity_type, entity_id, source_type, source_id,
-    result, reason, before_data, after_data, changes_data,
+    result, reason, before_data, after_data, changes_data, canonical_payload,
     previous_hash, entry_hash, key_id, occurred_at, v_batch
   from moved;
 

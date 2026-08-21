@@ -81,3 +81,65 @@ select public.archive_old_audit_events(now() - interval '180 days', 5000);
 ## 8. ما الذي لا يجب فعله
 
 لا تضع `AUDIT_HMAC_KEY_B64` أو `SMTP_PASSWORD` في `VITE_*`، ولا تضفها إلى GitHub Actions logs، ولا ترسلها في البريد أو WhatsApp، ولا تعرضها في صفحة الإعدادات. لا تستخدم مفتاح `service_role` في React. ولا تعتبر نجاح بناء الواجهة دليلاً على تطبيق الترحيل أو نشر الوظائف؛ يجب التحقق من ذلك داخل Supabase Dashboard وLogs.
+
+## 9. تشغيل محلي قبل النشر
+
+تحتاج المحاكاة المحلية إلى Docker يعمل وSupabase CLI. من جذر المشروع شغّل:
+
+```bash
+supabase start
+supabase db reset
+supabase functions serve audit-event --env-file supabase/.env.local
+```
+
+أنشئ `supabase/.env.local` محلياً فقط ولا ترفعه إلى GitHub:
+
+```dotenv
+AUDIT_HMAC_KEY_B64=<local-only-base64-key>
+AUDIT_HMAC_KEY_ID=local-v1
+SMTP_PASSWORD=<local-test-password>
+```
+
+اختبر الوظيفة من جلسة مستخدم محلية حقيقية أو بطلب يحمل JWT محلياً. يجب أن ترفض الوظيفة طلباً بلا Authorization، وأن ترفض أي body يحتوي على `smtpConfig`، وأن تسجل الحدث عبر `append_audit_event` فقط. لا تستخدم `SUPABASE_SERVICE_ROLE_KEY` داخل JavaScript في المتصفح.
+
+نفّذ فحوص المشروع بعد تشغيل الواجهة:
+
+```bash
+npm run verify
+python3 -m py_compile scripts/verify_audit_chain.py
+bash -n scripts/configure-supabase-secure.sh
+```
+
+لا تشغّل `configure-supabase-secure.sh` على مشروع الإنتاج أثناء الاختبار المحلي؛ السكربت مخصص للربط والنشر الفعلي. استخدم مشروع Supabase المحلي أو مشروعاً تجريبياً منفصلاً.
+
+## 10. التحقق من HMAC بعد النشر
+
+بعد تنفيذ حدث اختباري غير حساس، استخرج السجلات بصلاحية قراءة إدارية من SQL Editor دون عرض المفتاح أو البيانات الحساسة:
+
+```sql
+select sequence, tenant_key, action, entity_type, result,
+       key_id, previous_hash, entry_hash, occurred_at
+from public.audit_events
+where tenant_key = 'default'
+order by sequence desc
+limit 20;
+```
+
+يجب أن يكون `previous_hash` لأول سجل هو `GENESIS`، وأن يساوي `previous_hash` لكل سجل لاحق قيمة `entry_hash` للسجل السابق عند ترتيب `sequence` تصاعدياً. وجود `key_id` يوضح إصدار المفتاح المستخدم دون كشف المفتاح نفسه.
+
+لإعادة حساب السلسلة آلياً من جهاز إداري موثوق، لا تضع القيم في GitHub أو سجل CI:
+
+```bash
+export SUPABASE_URL="https://<project-ref>.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<ضعها في جلسة محلية فقط>"
+export AUDIT_HMAC_KEY_B64="<نفس مفتاح الإصدار الحالي>"
+export AUDIT_TENANT_KEY="default"
+python3 scripts/verify_audit_chain.py
+unset SUPABASE_SERVICE_ROLE_KEY AUDIT_HMAC_KEY_B64
+```
+
+النتيجة الناجحة تكون بصيغة `OK: verified ... audit events` دون طباعة المفتاح. أي نتيجة `HMAC mismatch` أو `previous_hash mismatch` تعني إيقاف الاعتماد المالي للسجل، حفظ نسخة للتحقيق، وعدم إعادة بناء السلسلة أو حذف الصفوف لإخفاء المشكلة.
+
+## 11. اختبار العبث والاستعادة
+
+في مشروع اختبار فقط، انسخ السجل إلى جدول تجريبي وغيّر قيمة `entry_hash` أو `canonical_payload` ثم شغّل أداة التحقق؛ يجب أن تفشل. لا تنفذ `UPDATE` أو `DELETE` على `public.audit_events` في الإنتاج. اختبر الأرشفة على مشروع تجريبي، ثم تحقق من أن `audit_events_archive` يحتفظ بالحمولة القانونية نفسها قبل اعتماد سياسة الاحتفاظ في الإنتاج.
