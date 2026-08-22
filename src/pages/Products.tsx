@@ -5,7 +5,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
-import { PRODUCT_CATALOG, getCategories } from "@/constants/productCatalog";
 import { formatCurrency } from "@/lib/formatters";
 import BulkEditDialog from "@/components/features/BulkEditDialog";
 import type { StockAlert } from "@/types";
@@ -55,7 +54,10 @@ export default function Products() {
   const [showAlerts, setShowAlerts] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
-  const categories = getCategories();
+  const categories = useMemo(
+    () => [...new Set(dbProducts.filter((p) => p.is_active).map((p) => p.category))],
+    [dbProducts],
+  );
 
   const loadProducts = async () => {
     const { data, error } = await supabase.from("products").select("*").order("code", { ascending: true });
@@ -65,21 +67,9 @@ export default function Products() {
       setLoading(false);
       return;
     }
-    if (data && data.length > 0) {
-      setDbProducts(data as DBProduct[]);
-    } else {
-      const batch = PRODUCT_CATALOG.map((p) => ({
-        code: p.code, name: p.name, category: p.category,
-        fabric_meters: p.fabricMeters, fabric_price_per_meter: p.fabricPricePerMeter,
-        tarha_cost: p.tarhaCost, extras_cost: p.extrasCost, total_cost: p.totalCost,
-        sell_price: p.sellPrice, stock_quantity: 0, min_stock_alert: 2, color: p.color || null,
-      }));
-      for (let i = 0; i < batch.length; i += 50) {
-        await supabase.from("products").upsert(batch.slice(i, i + 50), { onConflict: "code" });
-      }
-      const { data: seeded } = await supabase.from("products").select("*").order("code", { ascending: true });
-      setDbProducts((seeded || []) as DBProduct[]);
-      toast.success("تم تحميل كتالوج المنتجات");
+    setDbProducts((data || []) as DBProduct[]);
+    if (!data || data.length === 0) {
+      toast.info("لا توجد منتجات بعد. شغّل ترحيل seed_products أو أضفها من لوحة المدير.");
     }
     setLoading(false);
   };

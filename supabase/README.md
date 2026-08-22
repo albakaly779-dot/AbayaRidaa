@@ -163,3 +163,23 @@ unset SUPABASE_SERVICE_ROLE_KEY AUDIT_HMAC_KEY_B64
 بعد إضافة Secrets، شغّل `CI` تلقائياً عبر Pull Request. لا تسمح بدمج Pull Request إذا فشل `npm run verify` أو اختبارات HMAC أو فحص الأسرار. لتشغيل النشر، افتح **Actions → Deploy Supabase → Run workflow** واختر `staging` أو `production`. بيئة `production` يجب أن تتطلب موافقة مراجع قبل التنفيذ.
 
 الفحص الدوري `Audit Integrity` يعمل أسبوعياً أو يدوياً. إذا ظهر `HMAC mismatch` أو `previous_hash mismatch`، أوقف النشر المالي، احتفظ بنسخة من السجل للتحقيق، ولا تعِد تشغيل Workflow بشكل أعمى؛ أصلح سبب الاختلاف أولاً.
+
+## 13. اختبارات pgTAP وRLS
+
+يحتوي `supabase/tests/database/abaya_rls_and_workflows_test.sql` على اختبارات آلية للتحقق من تفعيل RLS على الجداول، وجود سياسات الإدارة والشريك، عدم منح المتصفح صلاحية تعديل سجل التدقيق، وجود الدوال الذرية، وجود Buckets، وحسابات التكلفة المولدة. يتطلب التشغيل المحلي Docker وSupabase CLI:
+
+```bash
+supabase start
+supabase db reset --local --no-seed
+supabase test db --local
+supabase db lint --local --schema public,private --level error --fail-on error
+supabase stop --no-backup
+```
+
+يُشغّل ملف `.github/workflows/ci.yml` هذه الفحوص في Job مستقل على نسخة Supabase محلية معزولة. لذلك لا يعتمد اختبار RLS على بيانات الإنتاج ولا يحتاج إلى `SUPABASE_SERVICE_ROLE_KEY` أو أي سر من أسرار المشروع.
+
+## 14. بوابة الترحيل والنشر
+
+يجب أن يمر أي تغيير في قاعدة البيانات عبر Pull Request ناجح. بعد الموافقة، ينفذ Workflow النشر `supabase db push` مرة واحدة وبترتيب الترحيلات، ثم يضبط أسرار الوظائف وينشر الوظائف الأربع. لا تضع أسرار GitHub في ملفات الترحيل، ولا تنفذ `db reset --linked` على الإنتاج؛ استخدم `db push` فقط بعد مراجعة خطة الترحيل ووجود نسخة احتياطية أو نقطة استعادة.
+
+ملف `supabase/config.toml` جزء من إعداد التطوير المحلي ويثبت إصدار PostgreSQL الرئيسي عند 17، بينما `supabase/.gitignore` يستبعد ملفات البيئة المحلية. ملف `.env.local` الخاص بالواجهة يحتوي فقط على `VITE_SUPABASE_URL` و`VITE_SUPABASE_ANON_KEY`، ولا يحتوي على مفتاح الخدمة أو مفاتيح HMAC أو SMTP.

@@ -53,3 +53,32 @@ jobs:
             echo 'Potential secret assignment found in tracked source files.' >&2
             exit 1
           fi
+
+  database:
+    name: Supabase migrations, pgTAP, and database lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start isolated Supabase database
+        run: supabase start
+
+      - name: Rebuild database from migrations
+        run: supabase db reset --local --no-seed
+
+      - name: Run pgTAP security and workflow tests
+        run: supabase test db --local
+
+      - name: Lint public and private database schemas
+        run: supabase db lint --local --schema public,private --level error --fail-on error
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup

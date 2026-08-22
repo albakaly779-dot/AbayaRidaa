@@ -113,47 +113,48 @@ export const useDataStore = create<DataState>()((set, get) => ({
 
   addOrder: async (orderData, userId) => {
     const orderNumber = generateOrderNumber();
-    const { data: row, error } = await supabase.from("orders").insert({
-      user_id: userId, order_number: orderNumber, customer_id: orderData.customerId,
-      customer_name: orderData.customerName, customer_phone: orderData.customerPhone,
-      status: orderData.status, payment_status: orderData.paymentStatus,
-      subtotal: orderData.subtotal, discount: orderData.discount, total: orderData.total,
-      paid: orderData.paid, remaining: orderData.remaining,
-      due_date: orderData.dueDate, notes: orderData.notes,
-      rep_id: orderData.repId, rep_name: orderData.repName,
-    }).select().single();
+    const { data: row, error } = await supabase.rpc("create_order_with_stock", {
+      p_order: {
+        user_id: userId,
+        order_number: orderNumber,
+        customer_id: orderData.customerId,
+        customer_name: orderData.customerName,
+        customer_phone: orderData.customerPhone,
+        rep_id: orderData.repId || null,
+        rep_name: orderData.repName || null,
+        status: orderData.status,
+        payment_status: orderData.paymentStatus,
+        subtotal: orderData.subtotal,
+        discount: orderData.discount,
+        total: orderData.total,
+        paid: orderData.paid,
+        remaining: orderData.remaining,
+        due_date: orderData.dueDate,
+        notes: orderData.notes || "",
+      },
+      p_items: orderData.items.map((i) => ({
+        product_code: i.productCode || "",
+        product_name: i.productName,
+        quantity: i.quantity,
+        unit_price: i.unitPrice,
+        buy_price: i.buyPrice || 0,
+        total: i.total,
+      })),
+    });
 
-    if (error) { toast.error("فشل إنشاء الطلب: " + error.message); return null; }
-
-    if (orderData.items.length > 0) {
-      const { error: itemsError } = await supabase.from("order_items").insert(
-        orderData.items.map((i) => ({
-          order_id: row.id, product_code: i.productCode || "", product_name: i.productName,
-          quantity: i.quantity, unit_price: i.unitPrice, buy_price: i.buyPrice || 0, total: i.total,
-        }))
-      );
-      if (itemsError) {
-        await supabase.from("orders").delete().eq("id", row.id);
-        toast.error("فشل حفظ عناصر الطلب: " + itemsError.message);
-        return null;
-      }
-    }
-
-    for (const item of orderData.items) {
-      if (item.productCode) {
-        const { error: stockError } = await supabase.rpc("decrement_stock", { p_code: item.productCode, p_qty: item.quantity });
-        if (stockError) console.warn("تعذر تحديث مخزون المنتج:", stockError.message);
-      }
+    if (error || !row) {
+      toast.error("فشل إنشاء الطلب: " + (error?.message || "لم تُعد قاعدة البيانات طلباً"));
+      return null;
     }
 
     const newOrder: Order = {
-      id: row.id, orderNumber, customerId: orderData.customerId,
-      customerName: orderData.customerName, customerPhone: orderData.customerPhone,
-      items: orderData.items, status: orderData.status, paymentStatus: orderData.paymentStatus,
-      subtotal: orderData.subtotal, discount: orderData.discount, total: orderData.total,
-      paid: orderData.paid, remaining: orderData.remaining,
-      dueDate: orderData.dueDate, notes: orderData.notes,
-      repId: orderData.repId, repName: orderData.repName,
+      id: row.id, orderNumber: row.order_number || orderNumber, customerId: row.customer_id,
+      customerName: row.customer_name, customerPhone: row.customer_phone,
+      items: orderData.items, status: row.status, paymentStatus: row.payment_status,
+      subtotal: Number(row.subtotal), discount: Number(row.discount), total: Number(row.total),
+      paid: Number(row.paid), remaining: Number(row.remaining),
+      dueDate: row.due_date, notes: row.notes,
+      repId: row.rep_id, repName: row.rep_name,
       createdAt: row.created_at?.split("T")[0] || new Date().toISOString().split("T")[0],
     };
     set((s) => ({ orders: [newOrder, ...s.orders] }));
@@ -183,39 +184,37 @@ export const useDataStore = create<DataState>()((set, get) => ({
   },
 
   addPayment: async (paymentData, userId) => {
-    const { data: row, error } = await supabase.from("payments").insert({
-      user_id: userId, order_id: paymentData.orderId, customer_id: paymentData.customerId,
-      customer_name: paymentData.customerName, amount: paymentData.amount,
-      method: paymentData.method, date: paymentData.date, notes: paymentData.notes || "",
-      receipt_url: paymentData.receiptUrl || "",
-      recorded_by_id: paymentData.recordedById || userId,
-      recorded_by_name: paymentData.recordedByName || "",
-    }).select().single();
-    if (error) { toast.error("فشل تسجيل الدفعة: " + error.message); return null; }
-
-    const newPayment: Payment = { id: row.id, ...paymentData };
-    const order = get().orders.find((o) => o.id === paymentData.orderId);
-    if (!order) {
-      set((state) => ({ payments: [newPayment, ...state.payments] }));
-      return newPayment;
-    }
-
-    const newPaid = Math.min(order.total, order.paid + paymentData.amount);
-    const newRemaining = Math.max(0, order.total - newPaid);
-    const paymentStatus = newRemaining === 0 ? "paid" as const : "partial" as const;
-    const { error: orderError } = await supabase.from("orders").update({
-      paid: newPaid, remaining: newRemaining, payment_status: paymentStatus,
-    }).eq("id", paymentData.orderId);
-    if (orderError) {
-      await supabase.from("payments").delete().eq("id", row.id);
-      toast.error("فشل تحديث حالة الطلب: " + orderError.message);
+    const { data: row, error } = await supabase.rpc("record_payment_atomic", {
+      p_payment: {
+        user_id: userId,
+        order_id: paymentData.orderId,
+        customer_id: paymentData.customerId,
+        customer_name: paymentData.customerName,
+        amount: paymentData.amount,
+        method: paymentData.method,
+        date: paymentData.date,
+        notes: paymentData.notes || "",
+        receipt_url: paymentData.receiptUrl || null,
+        recorded_by_name: paymentData.recordedByName || "",
+      },
+    });
+    if (error || !row) {
+      toast.error("فشل تسجيل الدفعة: " + (error?.message || "لم تُعد قاعدة البيانات دفعة"));
       return null;
     }
+
+    const newPayment: Payment = { id: row.id, ...paymentData };
+    const newPaid = Number(row.amount) + (get().payments
+      .filter((p) => p.orderId === paymentData.orderId)
+      .reduce((sum, p) => sum + p.amount, 0));
+    const order = get().orders.find((o) => o.id === paymentData.orderId);
+    const newRemaining = order ? Math.max(0, order.total - newPaid) : 0;
+    const paymentStatus = newRemaining === 0 ? "paid" as const : "partial" as const;
 
     set((state) => ({
       payments: [newPayment, ...state.payments],
       orders: state.orders.map((o) => o.id === paymentData.orderId
-        ? { ...o, paid: newPaid, remaining: newRemaining, paymentStatus }
+        ? { ...o, paid: Number(row.amount) + o.paid, remaining: newRemaining, paymentStatus }
         : o),
     }));
     return newPayment;

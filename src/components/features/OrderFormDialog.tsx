@@ -4,12 +4,32 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useDataStore } from "@/stores/dataStore";
 import { useRepStore } from "@/stores/repStore";
-import { findProductByCode, searchProducts, PRODUCT_CATALOG } from "@/constants/productCatalog";
+import { supabase } from "@/lib/supabase";
 import { generateId } from "@/lib/utils";
 import { formatCurrency, validateYemeniPhone, formatPhone } from "@/lib/formatters";
 import type { OrderItem, OrderStatus, PaymentStatus } from "@/types";
 
 interface Props { open: boolean; onClose: () => void; }
+
+interface ProductLookup {
+  id: string;
+  code: string;
+  name: string;
+  sell_price: number;
+  total_cost: number;
+  is_active: boolean;
+}
+
+function findProductByCode(products: ProductLookup[], code: string) {
+  const normalized = code.toUpperCase().replace(/\s+/g, "-").trim();
+  return products.find((p) => p.code === normalized || p.code.replace(/-/g, "").includes(normalized.replace(/-/g, "")));
+}
+
+function searchProducts(products: ProductLookup[], query: string) {
+  const q = query.toLowerCase().trim();
+  if (!q) return products;
+  return products.filter((p) => p.code.toLowerCase().includes(q) || p.name.includes(query));
+}
 
 export default function OrderFormDialog({ open, onClose }: Props) {
   const { user } = useAuth();
@@ -25,7 +45,9 @@ export default function OrderFormDialog({ open, onClose }: Props) {
   const [notes, setNotes] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [activeSearch, setActiveSearch] = useState<string | null>(null);
-  const [searchResults, setSearchResults] = useState<typeof PRODUCT_CATALOG>([]);
+  const [searchResults, setSearchResults] = useState<ProductLookup[]>([]);
+  const [products, setProducts] = useState<ProductLookup[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // Phone validation widget state
   const [showPhoneEdit, setShowPhoneEdit] = useState(false);
@@ -41,6 +63,21 @@ export default function OrderFormDialog({ open, onClose }: Props) {
       setShowPhoneEdit(false);
     }
   }, [customerId, selectedCustomer]);
+
+  useEffect(() => {
+    if (!open || products.length > 0) return;
+    let cancelled = false;
+    setProductsLoading(true);
+    supabase.from("products").select("id, code, name, sell_price, total_cost, is_active")
+      .eq("is_active", true).order("code", { ascending: true }).limit(500)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) toast.error("فشل تحميل المنتجات: " + error.message);
+        else setProducts((data || []) as ProductLookup[]);
+        setProductsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [open, products.length]);
 
   if (!open) return null;
 
@@ -58,28 +95,29 @@ export default function OrderFormDialog({ open, onClose }: Props) {
     setItems(items.map((item) => {
       if (item.id !== itemId) return item;
       const updated = { ...item, codeInput: code };
-      const product = findProductByCode(code);
+      const product = findProductByCode(products, code);
       if (product) {
         updated.productCode = product.code;
         updated.productName = product.name;
-        updated.unitPrice = product.sellPrice;
-        updated.buyPrice = product.totalCost;
-        updated.total = product.sellPrice * updated.quantity;
+        updated.unitPrice = product.sell_price;
+        updated.buyPrice = product.total_cost;
+        updated.total = product.sell_price * updated.quantity;
         setActiveSearch(null);
         setSearchResults([]);
       } else if (code.length >= 2) {
         setActiveSearch(itemId);
-        setSearchResults(searchProducts(code).slice(0, 8));
+        setSearchResults(searchProducts(products, code).slice(0, 8));
       }
       return updated;
     }));
   };
 
-  const selectProduct = (itemId: string, product: typeof PRODUCT_CATALOG[0]) => {
+  const selectProduct = (itemId: string, product: ProductLookup) => {
     setItems(items.map((item) => {
       if (item.id !== itemId) return item;
       return { ...item, codeInput: product.code, productCode: product.code, productName: product.name,
-        unitPrice: product.sellPrice, buyPrice: product.totalCost, total: product.sellPrice * item.quantity };
+                                unitPrice: product.sell_price, buyPrice: product.total_cost, total: product.sell_price * item.quantity };
+
     }));
     setActiveSearch(null); setSearchResults([]);
   };
@@ -249,7 +287,7 @@ export default function OrderFormDialog({ open, onClose }: Props) {
               </button>
             </div>
             <div className="mb-2 flex items-center gap-2 rounded-lg bg-gold/10 px-3 py-2 text-[11px] text-gold-dark sm:text-xs">
-              <Search className="size-3.5 shrink-0" /> أدخل رمز المنتج (مثل RM-812) وسيظهر السعر تلقائياً
+              <Search className="size-3.5 shrink-0" /> {productsLoading ? "جاري تحميل المنتجات..." : "أدخل رمز المنتج (مثل RM-812) وسيظهر السعر تلقائياً"}
             </div>
             <div className="space-y-3">
               {items.map((item) => (
@@ -258,7 +296,7 @@ export default function OrderFormDialog({ open, onClose }: Props) {
                     <div className="col-span-5 sm:col-span-4 relative">
                       <label className="mb-1 block text-[10px] font-medium text-gray-400">رمز المنتج</label>
                       <input value={item.codeInput || ""} onChange={(e) => handleCodeInput(item.id, e.target.value)}
-                        onFocus={() => { if ((item.codeInput?.length || 0) >= 2) { setActiveSearch(item.id); setSearchResults(searchProducts(item.codeInput || "").slice(0, 8)); } }}
+                                        onFocus={() => { if ((item.codeInput?.length || 0) >= 2) { setActiveSearch(item.id); setSearchResults(searchProducts(products, item.codeInput || "").slice(0, 8)); } }}
                         onBlur={() => setTimeout(() => setActiveSearch(null), 200)}
                         className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-gold focus:outline-none" placeholder="RM-812" dir="ltr" />
                       {activeSearch === item.id && searchResults.length > 0 && (
@@ -267,7 +305,7 @@ export default function OrderFormDialog({ open, onClose }: Props) {
                             <button key={p.code} type="button" onMouseDown={() => selectProduct(item.id, p)}
                               className="flex w-full items-center justify-between px-3 py-2 text-xs hover:bg-cream text-right">
                               <span className="font-bold text-navy" dir="ltr">{p.code}</span>
-                              <span className="font-bold text-gold tabular-nums">{p.sellPrice.toLocaleString("ar-YE")} ر.ي</span>
+                              <span className="font-bold text-gold tabular-nums">{Number(p.sell_price).toLocaleString("ar-YE")} ر.ي</span>
                             </button>
                           ))}
                         </div>
