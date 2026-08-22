@@ -40,6 +40,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install audit-chain dependencies
+        run: python -m pip install --disable-pip-version-check --no-cache-dir requests
+
       - name: Verify audit-chain tooling
         run: |
           python -m py_compile scripts/verify_audit_chain.py
