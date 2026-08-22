@@ -39,8 +39,8 @@ select ok((select relrowsecurity from pg_class where oid = 'public.user_roles'::
 select ok(to_regprocedure('private.has_any_role(text[])') is not null, 'role helper exists');
 select ok(to_regprocedure('private.is_admin()') is not null, 'admin helper exists');
 select ok((select prosecdef from pg_proc where oid = 'public.decrement_stock(text,numeric)'::regprocedure), 'stock decrement is SECURITY DEFINER');
-select ok(to_regprocedure('public.create_order_with_stock(uuid,text,jsonb,numeric,numeric,text)') is not null, 'atomic order workflow exists');
-select ok(to_regprocedure('public.record_payment_atomic(uuid,numeric,text,text)') is not null, 'atomic payment workflow exists');
+select ok(to_regprocedure('public.create_order_with_stock(jsonb,jsonb)') is not null, 'atomic order workflow exists');
+select ok(to_regprocedure('public.record_payment_atomic(jsonb)') is not null, 'atomic payment workflow exists');
 
 -- Append-only audit table and partner reports must not be writable from the browser.
 select ok(not has_table_privilege('authenticated', 'public.audit_events', 'UPDATE'), 'authenticated cannot update audit_events');
