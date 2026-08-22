@@ -2,14 +2,13 @@ import { useCallback, useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   Plus, Trash2, Users, ShieldCheck, Eye, Settings,
-  Mail, Loader2, Key, Copy, MessageCircle, Send, AlertCircle, CheckCircle2, KeyRound, MailPlus, Activity, FileSpreadsheet, MailCheck, CheckSquare, Square, X,
+  Mail, Loader2, Key, Copy, AlertCircle, CheckCircle2, Activity, FileSpreadsheet, CheckSquare, Square, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useAuditStore } from "@/stores/auditStore";
 import { supabase } from "@/lib/supabase";
 import { FunctionsHttpError } from "@supabase/supabase-js";
-import { useSettingsStore } from "@/stores/settingsStore";
 
 interface UserRole {
   id: string;
@@ -114,8 +113,6 @@ const FALLBACK_CONFIG: RoleDef = {
   color: "bg-gray-50 text-gray-700 border-gray-200", iconColor: "text-gray-500", permissions: [],
 };
 
-const ADMIN_EMAIL = "albakaly779@gmail.com";
-
 function generatePassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
   let pass = "";
@@ -126,7 +123,6 @@ function generatePassword(): string {
 export default function Roles() {
   const { user } = useAuth();
   const { logAction } = useAuditStore();
-  const { settings, initializeSettings } = useSettingsStore();
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState("");
@@ -134,14 +130,10 @@ export default function Roles() {
   const [role, setRole] = useState<RoleKey>("operations_manager");
   const [loading, setLoading] = useState(true);
   const [inviting, setInviting] = useState(false);
-  const [sendingReset, setSendingReset] = useState(false);
-  const [sendViaSmtp, setSendViaSmtp] = useState(false);
   const [credentials, setCredentials] = useState<{ email: string; password: string; role: string; name: string; emailSent?: boolean; emailError?: string } | null>(null);
   const [activityCounts, setActivityCounts] = useState<Record<string, { total: number; lastActivity?: string }>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkRole, setBulkRole] = useState<RoleKey>("operations_manager");
-
-  useEffect(() => { if (user?.id) initializeSettings(user.id); }, [user?.id, initializeSettings]);
 
   const loadRoles = useCallback(async () => {
     if (!user?.id) { setLoading(false); return; }
@@ -194,7 +186,7 @@ export default function Roles() {
 
     try {
       const { data: inviteData, error: inviteError } = await supabase.functions.invoke("invite-user", {
-        body: { email: email.trim(), password, role, fullName: userName, sendEmail: sendViaSmtp && settings.smtpEnabled },
+        body: { email: email.trim(), password, role, fullName: userName, sendEmail: false },
       });
 
       if (inviteError) {
@@ -233,20 +225,11 @@ export default function Roles() {
         toast.warning("تم إنشاء الحساب، لكن تعذر حفظ بعض بيانات الملف الشخصي. يمكن تحديثها لاحقًا.");
       }
 
-      setCredentials({
-        email: email.trim(), password, role: config.label, name: userName,
-        emailSent: inviteData.emailSent, emailError: inviteData.emailError,
-      });
+      setCredentials({ email: email.trim(), password, role: config.label, name: userName });
 
       logAction(user.id, "create", "role", undefined, `إنشاء حساب ${email.trim()} بدور ${config.label}${inviteData.emailSent ? " (إرسال ناجح)" : ""}`);
 
-      if (inviteData.emailSent) {
-        toast.success("✅ تم إنشاء الحساب وإرسال البيانات بالبريد");
-      } else if (sendViaSmtp && inviteData.emailError) {
-        toast.warning(`الحساب أُنشئ. لكن فشل إرسال البريد: ${inviteData.emailError}`);
-      } else {
-        toast.success(inviteData.wasExisting ? "تم تحديث كلمة المرور" : "تم إنشاء الحساب — جاهز للاستخدام");
-      }
+      toast.success(inviteData.wasExisting ? "تم تحديث كلمة المرور للعضو" : "تم إنشاء الحساب — البيانات متاحة للمدير العام فقط");
 
       setEmail(""); setFullName(""); setShowForm(false);
       loadRoles();
@@ -276,32 +259,6 @@ export default function Roles() {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast.success("تم النسخ");
-  };
-
-  const sendCredentialsToAdminEmail = () => {
-    if (!credentials) return;
-    const subject = encodeURIComponent(`🔐 بيانات دخول - ${credentials.name}`);
-    const body = encodeURIComponent(`حساب جديد:\n\nالاسم: ${credentials.name}\nالبريد: ${credentials.email}\nكلمة المرور: ${credentials.password}\nالدور: ${credentials.role}\n\n—\nرداء 🌸`);
-    window.open(`mailto:${ADMIN_EMAIL}?subject=${subject}&body=${body}`, "_blank");
-  };
-
-  const handleSendResetEmail = async () => {
-    if (!credentials) return;
-    setSendingReset(true);
-    try {
-      const { error } = await supabase.auth.resetPasswordForEmail(credentials.email, {
-        redirectTo: `${window.location.origin}/login`,
-      });
-      if (error) toast.error("فشل: " + error.message);
-      else toast.success(`تم إرسال رابط إعادة التعيين إلى ${credentials.email}`);
-    } catch (err) { toast.error("خطأ: " + (err instanceof Error ? err.message : "غير معروف")); }
-    setSendingReset(false);
-  };
-
-  const sendInviteToUserViaWA = () => {
-    if (!credentials) return;
-    const message = `مرحباً ${credentials.name} 👋\n\nحسابك في نظام رداء:\n📧 ${credentials.email}\n🔑 ${credentials.password}\n🎭 ${credentials.role}\n\n⚠️ غيّر كلمة المرور بعد أول دخول.\n\nرداء 🌸`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank");
   };
 
   const toggleSelect = (id: string) => {
@@ -376,21 +333,14 @@ export default function Roles() {
             <p className="font-bold mb-1">📌 كيف يعمل النظام؟</p>
             <ul className="space-y-1 text-xs list-disc list-inside text-amber-800">
               <li>الحسابات تُنشأ فوراً دون رمز تحقق (تجاوز لقفل التسجيل)</li>
-              <li>كلمة مرور تلقائية + عرضها لك مباشرة + حفظ في إشعاراتك</li>
-              <li>إذا كان SMTP مفعّلاً في الإعدادات، تصل بيانات الدخول للمستخدم بالبريد تلقائياً</li>
+              <li>كلمة مرور مؤقتة تُعرض للمدير العام مرة واحدة فقط</li>
+              <li>لا تُرسل كلمات المرور أو رموز الدخول عبر البريد أو واتساب أو الإشعارات</li>
               <li>يُطلب من كل مستخدم تغيير كلمة المرور المؤقتة بعد أول دخول</li>
               <li>يمكنك عرض سجل نشاط كل مستخدم من زر <b>"عرض النشاط"</b></li>
             </ul>
-            {!settings.smtpEnabled && (
-              <p className="mt-2 text-xs bg-white/60 rounded p-2 flex items-center gap-2">
-                ⚠️ SMTP غير مفعّل — <Link to="/settings" className="font-bold underline hover:text-amber-900">فعّله من الإعدادات</Link> لإرسال البيانات تلقائياً
-              </p>
-            )}
-            {settings.smtpEnabled && (
-              <p className="mt-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2 flex items-center gap-2 text-emerald-700">
-                ✅ SMTP مفعّل — يمكن إرسال البيانات تلقائياً عبر <b>{settings.smtpFromEmail || settings.smtpUser}</b>
-              </p>
-            )}
+            <p className="mt-2 text-xs bg-emerald-50 border border-emerald-200 rounded p-2 flex items-center gap-2 text-emerald-700">
+              ✅ التحكم بكلمات المرور والتعطيل والحذف محصور بالمدير العام فقط
+            </p>
           </div>
         </div>
       </div>
@@ -425,15 +375,7 @@ export default function Roles() {
             <div className="rounded-xl bg-emerald-100 p-2.5"><CheckCircle2 className="size-5 text-emerald-700" /></div>
             <div className="flex-1">
               <h3 className="text-sm font-bold text-navy">✅ تم إنشاء الحساب بنجاح</h3>
-              {credentials.emailSent ? (
-                <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1">
-                  <MailCheck className="size-3.5" /> تم إرسال البيانات لبريد المستخدم تلقائياً
-                </p>
-              ) : credentials.emailError ? (
-                <p className="text-xs text-amber-700">⚠️ لم يتم إرسال البريد: {credentials.emailError}</p>
-              ) : (
-                <p className="text-xs text-gray-500">احفظ البيانات وأرسلها للمستخدم</p>
-              )}
+              <p className="text-xs text-emerald-700 font-semibold">البيانات الحساسة لا تُرسل تلقائياً لأي عضو</p>
             </div>
           </div>
 
@@ -454,24 +396,16 @@ export default function Roles() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <button onClick={sendCredentialsToAdminEmail}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <button onClick={() => copyToClipboard(credentials.password)}
               className="flex items-center justify-center gap-2 rounded-xl bg-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-navy-light">
-              <MailPlus className="size-4" /> إرسال لإيميلي
-            </button>
-            <button onClick={handleSendResetEmail} disabled={sendingReset}
-              className="flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50">
-              {sendingReset ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-              رابط تحقق
-            </button>
-            <button onClick={sendInviteToUserViaWA}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-emerald-700">
-              <MessageCircle className="size-4" /> واتساب
+              <Copy className="size-4" /> نسخ كلمة المرور للمدير
             </button>
             <button onClick={() => setCredentials(null)}
               className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-3 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-50">
-              ✕ إغلاق
+              إخفاء البيانات الآن
             </button>
+            <div className="flex items-center justify-center rounded-xl bg-amber-50 px-3 py-2.5 text-center text-[10px] font-semibold text-amber-800">لا يوجد إرسال بريد أو واتساب تلقائي</div>
           </div>
         </div>
       )}
@@ -505,15 +439,9 @@ export default function Roles() {
             </div>
           </div>
 
-          {settings.smtpEnabled && (
-            <label className="flex items-center gap-2 cursor-pointer rounded-xl bg-blue-50 border border-blue-200 p-3">
-              <input type="checkbox" checked={sendViaSmtp} onChange={(e) => setSendViaSmtp(e.target.checked)}
-                className="size-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500" />
-              <span className="text-xs font-semibold text-blue-800 flex items-center gap-2">
-                <MailCheck className="size-4" /> أرسل بيانات الدخول تلقائياً لبريد المستخدم عبر SMTP
-              </span>
-            </label>
-          )}
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+            لأسباب أمنية، لا يرسل النظام كلمة المرور أو أي رمز تحقق إلى العضو. تظهر كلمة المرور المؤقتة للمدير العام فقط بعد الإنشاء، ويجب تسليمها يدوياً عبر قناة آمنة خارج النظام إن لزم.
+          </div>
 
           <div className="flex gap-3">
             <button onClick={() => setShowForm(false)} className="rounded-xl border border-gray-200 px-6 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50">إلغاء</button>

@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, 'feature/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint, build, and audit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify frontend
+        run: npm run verify
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install audit-chain dependencies
+        run: python -m pip install --disable-pip-version-check --no-cache-dir requests
+
+      - name: Verify audit-chain tooling
+        run: |
+          python -m py_compile scripts/verify_audit_chain.py
+          python -m unittest discover -s scripts -p 'test_*.py' -v
+          bash -n scripts/configure-supabase-secure.sh
+
+      - name: Scan tracked files for obvious secret assignments
+        shell: bash
+        run: |
+          if git grep -n -I -E '(SUPABASE_SERVICE_ROLE_KEY|AUDIT_HMAC_KEY_B64|SMTP_PASSWORD)=[^<"${}]' -- ':!supabase/README.md' ':!DEPLOYMENT_GUIDE.md'; then
+            echo 'Potential secret assignment found in tracked source files.' >&2
+            exit 1
+          fi
+
+  database:
+    name: Supabase migrations, pgTAP, and database lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start isolated Supabase database
+        run: supabase start
+
+      - name: Rebuild database from migrations
+        run: supabase db reset --local --no-seed
+
+      - name: Run pgTAP security and workflow tests
+        run: supabase test db --local
+
+      - name: Lint public and private database schemas
+        run: supabase db lint --local --schema public,private --level error --fail-on error
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup

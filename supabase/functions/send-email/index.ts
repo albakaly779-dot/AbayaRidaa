@@ -19,15 +19,6 @@ interface SendEmailBody {
   subject: string;
   html?: string;
   text?: string;
-  smtpConfig?: {
-    host: string;
-    port: number | string;
-    user: string;
-    password: string;
-    fromEmail?: string;
-    fromName?: string;
-    useTls?: boolean;
-  };
   testMode?: boolean;
 }
 
@@ -101,7 +92,14 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { to, subject, html, text, smtpConfig: overrideConfig, testMode } = body;
+    const { to, subject, html, text, testMode } = body;
+
+    if ("smtpConfig" in body) {
+      return new Response(
+        JSON.stringify({ error: "إرسال إعدادات SMTP من المتصفح غير مسموح — استخدم Secrets الخادمية" }),
+        { status: 400, headers: jsonHeaders },
+      );
+    }
 
     if (!to || !subject) {
       return new Response(
@@ -133,18 +131,7 @@ Deno.serve(async (req) => {
 
     // ---------------- LOAD SMTP CONFIG ----------------
     let config: SmtpConfig;
-    if (overrideConfig && overrideConfig.host && overrideConfig.user) {
-      // Override only allowed for admin (already verified above)
-      config = {
-        host: overrideConfig.host,
-        port: parseInt(String(overrideConfig.port || 587)),
-        user: overrideConfig.user,
-        password: overrideConfig.password || "",
-        fromEmail: overrideConfig.fromEmail || overrideConfig.user,
-        fromName: overrideConfig.fromName || "رداء",
-        useTls: overrideConfig.useTls !== false,
-      };
-    } else {
+    {
       const supabaseAdmin = createClient(supabaseUrl, serviceKey);
       const { data: rows, error: rowsErr } = await supabaseAdmin
         .from("app_settings")
@@ -155,7 +142,6 @@ Deno.serve(async (req) => {
           "smtpHost",
           "smtpPort",
           "smtpUser",
-          "smtpPassword",
           "smtpFromEmail",
           "smtpFromName",
           "smtpUseTls",
@@ -201,7 +187,7 @@ Deno.serve(async (req) => {
         host: cfg.smtpHost,
         port: parseInt(cfg.smtpPort || "587"),
         user: cfg.smtpUser,
-        password: cfg.smtpPassword || "",
+        password: Deno.env.get("SMTP_PASSWORD") || "",
         fromEmail: cfg.smtpFromEmail || cfg.smtpUser,
         fromName: cfg.smtpFromName || "رداء",
         useTls: cfg.smtpUseTls === "true",
@@ -210,16 +196,12 @@ Deno.serve(async (req) => {
 
     if (!config.password) {
       return new Response(
-        JSON.stringify({
-          error: "كلمة مرور SMTP فارغة",
-          hint:
-            "لـ Gmail: استخدم App Password من إعدادات Google. لـ SendGrid: user=apikey و password=مفتاح API",
-        }),
-        { status: 400, headers: jsonHeaders },
+        JSON.stringify({ error: "سر SMTP غير مضبوط في Secrets الخادمية (SMTP_PASSWORD)" }),
+        { status: 500, headers: jsonHeaders },
       );
     }
 
-    // ---------------- SEND VIA SMTP ----------------
+    // ---------------- SEND EMAIL ----------------
     // TLS handshake at connection start ONLY for SMTPS ports (465 = standard SSL, 8465 = alt).
     // For submission port (587) and standard SMTP (25/2525), the client MUST start plain
     // and let denomailer auto-negotiate STARTTLS after EHLO.

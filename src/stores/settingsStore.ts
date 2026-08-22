@@ -128,6 +128,8 @@ function serializeValue(val: unknown): string {
 
 function applyValue(merged: AppSettings, key: string, val: string): void {
   const k = key as keyof AppSettings;
+  // SMTP credentials are server-managed secrets and must never enter browser state.
+  if (k === "smtpPassword") { merged.smtpPassword = ""; return; }
   if (!(k in merged)) return;
   const defaultVal = merged[k];
   if (Array.isArray(defaultVal)) {
@@ -153,7 +155,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
 
   initializeSettings: async (userId: string) => {
     if (get().initialized) return;
-    const { data } = await supabase.from("app_settings").select("key, value").eq("user_id", userId);
+    const { data } = await supabase.from("app_settings").select("key, value").eq("user_id", userId).neq("key", "smtpPassword");
     const merged: AppSettings = { ...DEFAULT_SETTINGS };
     (data || []).forEach((row: { key: string; value: string }) => {
       applyValue(merged, row.key, row.value);
@@ -162,7 +164,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   refreshSettings: async (userId: string) => {
-    const { data } = await supabase.from("app_settings").select("key, value").eq("user_id", userId);
+    const { data } = await supabase.from("app_settings").select("key, value").eq("user_id", userId).neq("key", "smtpPassword");
     const merged: AppSettings = { ...DEFAULT_SETTINGS };
     (data || []).forEach((row: { key: string; value: string }) => {
       applyValue(merged, row.key, row.value);
@@ -171,6 +173,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   updateSetting: async (userId, key, value) => {
+    if (key === "smtpPassword") throw new Error("SMTP password is server-managed");
     const { error } = await supabase.from("app_settings").upsert(
       { user_id: userId, key, value, updated_at: new Date().toISOString() },
       { onConflict: "user_id,key" }
@@ -182,7 +185,8 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   updateSettings: async (userId, updates) => {
-    const promises = Object.entries(updates).map(([key, val]) => {
+    const safeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => key !== "smtpPassword")) as Partial<AppSettings>;
+    const promises = Object.entries(safeUpdates).map(([key, val]) => {
       const strVal = serializeValue(val);
       return supabase.from("app_settings").upsert(
         { user_id: userId, key, value: strVal, updated_at: new Date().toISOString() },
@@ -195,7 +199,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       toast.error("فشل حفظ بعض الإعدادات: " + failed.error.message);
       throw failed.error;
     }
-    set((state) => ({ settings: { ...state.settings, ...updates } }));
+    set((state) => ({ settings: { ...state.settings, ...safeUpdates, smtpPassword: "" } }));
     toast.success("تم حفظ الإعدادات بنجاح");
   },
 

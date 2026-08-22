@@ -15,7 +15,7 @@ interface AuthState {
 
 let globalUser: AuthUser | null = null;
 let globalLoading = true;
-let globalRole: UserRole = "admin";
+let globalRole: UserRole = "support";
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -69,7 +69,7 @@ export function useAuth(): AuthState {
             logActivity(globalUser.email, globalUser.id, "logout", "تسجيل خروج", {}).catch(() => { /* silent */ });
           }
           globalUser = null;
-          globalRole = "admin";
+          globalRole = "support";
           globalLoading = false;
           notify();
         } else if (event === "TOKEN_REFRESHED" && session?.user) {
@@ -109,7 +109,7 @@ export function useAuth(): AuthState {
     const { error } = await supabase.auth.signOut();
     if (error) console.error(error);
     globalUser = null;
-    globalRole = "admin";
+    globalRole = "support";
     notify();
   }, []);
 

@@ -63,15 +63,7 @@ async function findUserIdByEmail(
   supabaseAdmin: ReturnType<typeof createClient>,
   email: string,
 ): Promise<string | null> {
-  // Primary strategy: query user_profiles synced by trigger — no pagination bug
-  const { data: profile } = await supabaseAdmin
-    .from("user_profiles")
-    .select("id")
-    .eq("email", email)
-    .maybeSingle();
-  if (profile?.id) return profile.id as string;
-
-  // Fallback: explicit pagination on listUsers (avoids empty query-string bug)
+  // Use Auth Admin pagination as the source of truth; user_profiles intentionally has no email column.
   try {
     let page = 1;
     while (page <= 20) {
@@ -273,7 +265,8 @@ Deno.serve(async (req) => {
     const password = body.password || "";
     const role = (body.role || "support").trim();
     const fullName = (body.fullName || "").trim();
-    const sendEmail = body.sendEmail === true;
+    // Credentials are never sent by this endpoint. The manager shares them through a protected channel.
+    const sendEmail = false;
 
     if (!rawEmail || !isValidEmail(rawEmail)) {
       return new Response(
@@ -518,17 +511,32 @@ Deno.serve(async (req) => {
 
       const { error: rlErr } = await supabaseAdmin.from("user_roles").upsert(
         {
-          user_id: caller.id, // admin who created it
+          user_id: userId,
           assigned_user_email: rawEmail,
           role,
           permissions: JSON.stringify(rolePermissions[role] || []),
           is_active: true,
+          created_by: caller.id,
         },
         { onConflict: "user_id,assigned_user_email" },
       );
       if (rlErr) {
         roleAssignmentError = rlErr.message;
         console.error("Role assignment failed:", rlErr.message);
+      } else {
+        const { error: profileError } = await supabaseAdmin.from("user_profiles").upsert({
+          id: userId,
+          full_name: displayName,
+          username: displayName,
+          assigned_role: role,
+          must_change_password: true,
+          is_active: true,
+          last_password_reset: now,
+        }, { onConflict: "id" });
+        if (profileError) {
+          roleAssignmentError = profileError.message;
+          console.error("Profile synchronization failed:", profileError.message);
+        }
       }
     } catch (roleErr) {
       roleAssignmentError = roleErr instanceof Error
@@ -559,16 +567,13 @@ Deno.serve(async (req) => {
     // ------------------------------------------------------------------
     // 6. NOTIFICATION (WITHOUT plaintext password)
     // ------------------------------------------------------------------
-    let emailSent = false;
+    const emailSent = false;
     let emailError = "";
     try {
-      const { data: adminProfile } = await supabaseAdmin
-        .from("user_profiles")
-        .select("id")
-        .eq("email", ADMIN_EMAIL)
-        .maybeSingle();
-
-      const adminUserId = adminProfile?.id as string | undefined;
+      const { data: adminUsers } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const adminUserId = adminUsers?.users?.find(
+        (u: { id: string; email?: string }) => (u.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase(),
+      )?.id;
 
       if (adminUserId) {
         // Store notification WITHOUT password — only metadata
@@ -586,20 +591,10 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Optionally send credentials via SMTP
+      // Passwords are intentionally never sent by this function.
       if (sendEmail && adminUserId) {
         const origin = req.headers.get("origin") || "";
-        const result = await sendCredentialsEmail(
-          supabaseAdmin,
-          adminUserId,
-          rawEmail,
-          password,
-          displayName,
-          role,
-          origin,
-        );
-        emailSent = result.sent;
-        emailError = result.error;
+        emailError = "إرسال كلمات المرور معطل لأسباب أمنية";
       }
     } catch (notifErr) {
       console.error("Notification/email step error:", notifErr);

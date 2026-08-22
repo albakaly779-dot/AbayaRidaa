@@ -51,7 +51,7 @@ export default function Settings() {
   const [smtpHost, setSmtpHost] = useState(settings.smtpHost);
   const [smtpPort, setSmtpPort] = useState(settings.smtpPort);
   const [smtpUser, setSmtpUser] = useState(settings.smtpUser);
-  const [smtpPassword, setSmtpPassword] = useState(settings.smtpPassword);
+  const [smtpPassword] = useState("");
   const [smtpFromEmail, setSmtpFromEmail] = useState(settings.smtpFromEmail);
   const [smtpFromName, setSmtpFromName] = useState(settings.smtpFromName);
   const [smtpUseTls, setSmtpUseTls] = useState(settings.smtpUseTls);
@@ -99,7 +99,6 @@ export default function Settings() {
     setSmtpHost(settings.smtpHost);
     setSmtpPort(settings.smtpPort);
     setSmtpUser(settings.smtpUser);
-    setSmtpPassword(settings.smtpPassword);
     setSmtpFromEmail(settings.smtpFromEmail);
     setSmtpFromName(settings.smtpFromName);
     setSmtpUseTls(settings.smtpUseTls);
@@ -164,7 +163,7 @@ export default function Settings() {
     setTestingSmtp(true);
     try {
       const { data, error } = await supabase.functions.invoke("send-email", {
-        body: {
+          body: {
           to: testEmail,
           subject: "🧪 اختبار SMTP - نظام رداء",
           html: `<div dir="rtl" style="font-family:Cairo,Arial;padding:20px;background:#f8f6f0;border-radius:10px">
@@ -175,10 +174,6 @@ export default function Settings() {
           </div>`,
           text: "اختبار SMTP - إذا وصلك هذا الإيميل، فإن إعدادات SMTP تعمل بشكل صحيح.",
           testMode: true,
-          smtpConfig: {
-            host: smtpHost, port: smtpPort, user: smtpUser, password: smtpPassword,
-            fromEmail: smtpFromEmail || smtpUser, fromName: smtpFromName, useTls: smtpUseTls,
-          },
         },
       });
 
@@ -228,7 +223,7 @@ export default function Settings() {
         invoiceTemplate, invoicePrimaryColor, invoiceHeaderText, invoiceFooterText,
         invoiceTaxNumber, invoiceTerms, invoiceShowBarcode, invoiceLogoUrl,
         invoicePageSize, invoiceShowSignature, invoiceCopyLabel,
-        smtpEnabled, smtpProvider, smtpHost, smtpPort, smtpUser, smtpPassword,
+        smtpEnabled, smtpProvider, smtpHost, smtpPort, smtpUser,
         smtpFromEmail, smtpFromName, smtpUseTls,
         featureWhatsapp, featureSmsAlerts, featureStockAlerts, featureCommissions,
         featureReturns, featureExpenses, featureExport, fixedExpenses,
@@ -339,8 +334,8 @@ export default function Settings() {
               <div className="flex items-center gap-3">
                 <div className="rounded-xl bg-blue-100 p-2.5"><Server className="size-5 text-blue-600" /></div>
                 <div>
-                  <h2 className="text-base font-bold text-navy">إعدادات SMTP للبريد</h2>
-                  <p className="text-xs text-gray-400">لإرسال بيانات دخول المستخدمين تلقائياً</p>
+              <h2 className="text-base font-bold text-navy">إعدادات SMTP للبريد</h2>
+              <p className="text-xs text-gray-400">اتصال البريد يُدار من الخادم ولا يُعرض للموظفين</p>
                 </div>
               </div>
               <button onClick={() => setSmtpEnabled(!smtpEnabled)}
@@ -394,17 +389,9 @@ export default function Settings() {
                       className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-blue-400 focus:outline-none"
                       placeholder="your@email.com" dir="ltr" />
                   </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] font-bold text-gray-700">
-                      كلمة المرور / API Key
-                      <button type="button" onClick={() => setShowSmtpPass(!showSmtpPass)}
-                        className="ms-2 text-blue-500 hover:underline text-[9px]">
-                        {showSmtpPass ? "إخفاء" : "إظهار"}
-                      </button>
-                    </label>
-                    <input type={showSmtpPass ? "text" : "password"} value={smtpPassword} onChange={(e) => setSmtpPassword(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:border-blue-400 focus:outline-none"
-                      dir="ltr" />
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 sm:col-span-2">
+                    <p className="text-[11px] font-bold text-amber-900">السر الخادمي محمي</p>
+                    <p className="mt-1 text-[10px] leading-5 text-amber-800">لا يتم عرض كلمة مرور SMTP أو API Key في المتصفح ولا حفظها من هذه الصفحة. ضعها في Secrets الخاصة بـ Edge Function ثم اختبر الاتصال من هنا.</p>
                   </div>
                   <div>
                     <label className="mb-1 block text-[11px] font-bold text-gray-700">من (البريد الظاهر)</label>
@@ -438,9 +425,7 @@ export default function Settings() {
                       اختبار
                     </button>
                   </div>
-                  <p className="mt-1.5 text-[9px] text-gray-500">
-                    💡 يستخدم الاختبار البيانات الحالية في النموذج (حتى قبل الحفظ)
-                  </p>
+                    <p className="mt-1.5 text-[9px] text-gray-500">يستخدم الاختبار إعدادات SMTP الخادمية بعد نشر Edge Function.</p>
                 </div>
               </>
             )}
@@ -448,10 +433,8 @@ export default function Settings() {
             {!smtpEnabled && (
               <div className="rounded-xl bg-gray-50 p-4 text-center">
                 <Mail className="mx-auto size-8 text-gray-300 mb-2" />
-                <p className="text-xs text-gray-500 font-semibold">فعّل SMTP لإرسال إيميلات فعلية للمستخدمين</p>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  عند التفعيل، ستصل بيانات الدخول للمستخدمين الجدد تلقائياً عبر البريد
-                </p>
+                <p className="text-xs text-gray-500 font-semibold">فعّل SMTP لإرسال تنبيهات تشغيلية فقط</p>
+                <p className="text-[10px] text-gray-400 mt-1">لا تُرسل كلمات مرور الأعضاء أو رموز التحقق عبر البريد.</p>
               </div>
             )}
           </div>

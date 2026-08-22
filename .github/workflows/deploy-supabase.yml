@@ -1,0 +1,93 @@
+name: Deploy Supabase
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'GitHub Environment to deploy to'
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+  push:
+    tags:
+      - 'supabase-v*'
+
+permissions:
+  contents: read
+
+env:
+  SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+concurrency:
+  group: supabase-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Apply Supabase migration and deploy functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Validate required configuration without printing values
+        shell: bash
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          AUDIT_HMAC_KEY_B64: ${{ secrets.AUDIT_HMAC_KEY_B64 }}
+          AUDIT_HMAC_KEY_ID: ${{ secrets.AUDIT_HMAC_KEY_ID }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN"
+          test -n "$SUPABASE_PROJECT_REF"
+          test -n "$AUDIT_HMAC_KEY_B64"
+          test -n "$AUDIT_HMAC_KEY_ID"
+          test -n "$SMTP_PASSWORD"
+          echo "Required deployment configuration is present. Secret values are not printed."
+
+      - name: Link project
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+
+      - name: Apply database migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase db push
+
+      - name: Set Edge Function secrets
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          AUDIT_HMAC_KEY_B64: ${{ secrets.AUDIT_HMAC_KEY_B64 }}
+          AUDIT_HMAC_KEY_ID: ${{ secrets.AUDIT_HMAC_KEY_ID }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          supabase secrets set \
+            AUDIT_HMAC_KEY_B64="$AUDIT_HMAC_KEY_B64" \
+            AUDIT_HMAC_KEY_ID="$AUDIT_HMAC_KEY_ID" \
+            SMTP_PASSWORD="$SMTP_PASSWORD"
+
+      - name: Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy audit-event
+          supabase functions deploy send-email
+          supabase functions deploy notify-admin
+          supabase functions deploy invite-user

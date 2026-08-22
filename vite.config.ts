@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     host: "::",
     port: 8080,
+    // Allow the temporary sandbox preview host during development only.
+    allowedHosts: [".manus.computer"],
   },
   plugins: [
     react(),

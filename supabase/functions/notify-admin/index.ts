@@ -76,16 +76,15 @@ Deno.serve(async (req) => {
     };
     const sourceLabel = sourceLabels[source || ""] || source || "غير محدد";
 
-    // Find admin user id to attribute the notification
-    const { data: adminProfile } = await supabaseAdmin
-      .from("user_profiles")
-      .select("id")
-      .eq("email", ADMIN_EMAIL)
-      .maybeSingle();
+    // Find admin user id from Auth; user_profiles intentionally has no email column.
+    const { data: adminUsers } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const adminUserId = adminUsers?.users?.find(
+      (u: { id: string; email?: string }) => (u.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase(),
+    )?.id;
 
-    if (adminProfile?.id) {
+    if (adminUserId) {
       await supabaseAdmin.from("notifications").insert({
-        user_id: adminProfile.id,
+        user_id: adminUserId,
         type: "custom",
         recipient_name: "المدير",
         recipient_phone: ADMIN_EMAIL,

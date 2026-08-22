@@ -112,7 +112,7 @@ export default function Login() {
       <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 lg:max-w-lg">
         <div className="w-full max-w-sm">
           <div className="mb-8 text-center">
-            <img src={displayLogo} alt={businessName} width={80} height={80} decoding="async" fetchPriority="high" className="mx-auto mb-4 size-20 rounded-2xl object-cover shadow-xl shadow-navy/20 bg-white" />
+            <img src={displayLogo} alt={businessName} width={80} height={80} decoding="async" className="mx-auto mb-4 size-20 rounded-2xl object-cover shadow-xl shadow-navy/20 bg-white" />
             <h1 className="font-kufi text-2xl font-bold text-navy">{businessName}</h1>
             <p className="mt-1 text-sm text-gray-500">نظام إدارة المبيعات والمديونيات</p>
           </div>
@@ -200,7 +200,7 @@ export default function Login() {
       </div>
 
       <div className="relative hidden flex-1 lg:block">
-        <img src={loginBg} alt="" width={1200} height={672} decoding="async" fetchPriority="high" className="h-full w-full object-cover" />
+        <img src={loginBg} alt="" width={1200} height={672} decoding="async" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-navy/80 via-navy/50 to-transparent" />
         <div className="absolute bottom-12 right-12 max-w-md">
           <h2 className="font-kufi text-3xl font-bold leading-relaxed text-white">

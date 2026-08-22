@@ -26,7 +26,9 @@
 | `invite-user` | ✅ تصحيح `user_metadata` (منع خطأ ipNotInner) |
 | `invite-user` | ✅ إصلاح TLS handshake على المنفذ 587 |
 | `send-email` | ✅ فحص صلاحية admin server-side |
+| `send-email` | ✅ منع smtpConfig القادم من المتصفح واستخدام SMTP_PASSWORD الخادمي |
 | `send-email` | ✅ إصلاح TLS handshake على المنفذ 587 |
+| `audit-event` | ✅ تسجيل Append-Only مع HMAC من الخادم |
 | `notify-admin` | ✅ منع unauthenticated invocations |
 
 ### الأمر:
@@ -36,6 +38,7 @@ supabase link --project-ref wtvbkjnyluwvsbagwtvb
 supabase functions deploy invite-user
 supabase functions deploy send-email
 supabase functions deploy notify-admin
+supabase functions deploy audit-event
 ```
 
 ### التحقق من النشر:
@@ -63,13 +66,13 @@ supabase functions list
    - **Port**: `587`
    - **Use TLS**: ✅ (أو اتركه — النظام يتجاهله الآن ويقرر تلقائياً)
    - **Username**: بريد Gmail الكامل
-   - **Password**: الـ 16 حرف من App Password
+   - **Password**: لا تُدخلها هنا؛ ضع App Password في Secret باسم `SMTP_PASSWORD` داخل Supabase
    - **From Email**: نفس بريد Gmail
    - **From Name**: `رداء`
-4. اضغط **حفظ**
-5. اضغط **اختبار SMTP** وأدخل بريدك الشخصي
+4. ضع `SMTP_PASSWORD` في Supabase Edge Function Secrets ثم اضغط **حفظ** لإعدادات البريد غير الحساسة
+5. اضغط **اختبار SMTP** وأدخل بريد الاختبار
 6. ✅ **متوقع**: رسالة "تم تسليم الرسالة إلى خادم SMTP بنجاح"
-7. تحقق من صندوق الوارد + Spam خلال 30 ثانية
+7. تحقق من صندوق الوارد وSpam خلال 30 ثانية؛ لا تُرسل كلمات مرور الأعضاء أو رموز التحقق بالبريد
 
 ### إذا فشل:
 | رسالة الخطأ | السبب | الحل |
@@ -126,12 +129,11 @@ supabase functions list
    - **الدور**: `محاسب`
    - **كلمة المرور المؤقتة**: `Temp1234!` (8 أحرف على الأقل)
    - **الاسم**: `محاسب تجريبي`
-   - ✅ **إرسال بيانات الدخول بالبريد**
 5. اضغط **إنشاء**
-6. ✅ **متوقع**: 
-   - رسالة success بدون warnings
-   - في `/notifications`، إشعار **بدون** كلمة المرور
-   - وصول بريد يحتوي بيانات الدخول (تحقق من App Password صحيح)
+6. ✅ **متوقع**:
+   - رسالة نجاح بدون تحذيرات
+   - لا يتم إرسال كلمة المرور أو أي رمز تحقق إلى المستخدم
+   - لا يظهر السر في `/notifications` أو سجلات الوظائف
 
 ### كمستخدم جديد (accountant):
 1. افتح متصفح **خاص/incognito**
@@ -190,7 +192,7 @@ npm run build
 | # | التحقق | الطريقة | ملاحظات |
 |---|--------|---------|---------|
 | 1 | Edge Functions محدَّثة | `supabase functions list` | Updated at حديث |
-| 2 | SMTP يرسل فعلياً | Test Email من Settings | استخدم App Password |
+| 2 | SMTP يرسل فعلياً | Test Email من Settings بعد ضبط `SMTP_PASSWORD` | السر موجود في Supabase Secrets فقط |
 | 3 | RLS لا يسمح للـ accountant بترقية نفسه | DevTools Console | يجب أن يفشل بخطأ 42501 |
 | 4 | إنشاء مستخدم accountant ينجح | من `/roles` | Success بدون warnings |
 | 5 | Password Change Guard يعمل | كـ user جديد | يعيد التوجيه لـ `/change-password` |
@@ -248,3 +250,36 @@ npx supabase functions deploy invite-user --project-ref wtvbkjnyluwvsbagwtvb
 ```
 
 بعد النشر، اختبر إنشاء حساب جديد من `/roles` بحساب مشرف، وتحقق من أن الحساب يظهر في `user_roles` وأن تسجيل الدخول بالحساب الجديد يعمل. إذا استمر ظهور `ipNotInner` بعد النشر، راجع Logs الخاصة بالـ Edge Function وtriggers الخاصة بـ `auth.users`، لأن السبب عندها سيكون في إعداد قاعدة البيانات وليس في حزمة الواجهة.
+
+## تحديثات 2026-08-21: الإنتاج والموافقات والتدقيق الآمن
+
+أضيف إلى المستودع الترحيل `supabase/migrations/202608210001_security_production_workflows.sql`. يضيف الترحيل جداول الإنتاج اليومي والتكاليف، طلبات موافقات مرتجعات العملاء والموردين، أحداث الموافقة، توقيعات تقارير الشريك، وسجل `audit_events` Append-Only مع أرشيف وقواعد RLS.
+
+طبّق الترحيل أولاً على مشروع Supabase تجريبي، ثم نفذه على المشروع الحقيقي بعد أخذ نسخة احتياطية واختبار الاستعادة. بعد ذلك انشر الوظائف الجديدة والمعدلة:
+
+```bash
+supabase functions deploy audit-event
+supabase functions deploy send-email
+```
+
+اضبط Secrets الخاصة بوظيفة `audit-event` دون وضعها في `.env` أو الواجهة:
+
+```bash
+supabase secrets set AUDIT_HMAC_KEY_B64="<base64-random-key>" AUDIT_HMAC_KEY_ID="v1"
+```
+
+اضبط Secret `SMTP_PASSWORD` لوظيفة `send-email`. لا ترسل `smtpConfig` من المتصفح؛ الوظيفة ترفضه الآن وتقرأ كلمة المرور من Secret خادمي. يمكن حفظ Host وPort وUsername وبيانات المرسل غير الحساسة في إعدادات النظام، لكن لا تحفظ كلمة المرور في حالة React أو في مستودع Git.
+
+لتشغيل أرشفة سجل المراجعة دورياً، استخدم Scheduled Edge Function أو وظيفة خارجية بصلاحية `service_role` لاستدعاء:
+
+```sql
+select public.archive_old_audit_events(now() - interval '180 days', 5000);
+```
+
+لا تستدعِ دالة الأرشفة من المتصفح. احتفظ بنسخة الأرشيف في تخزين مركزي غير قابل للتعديل إذا كانت متطلبات التدقيق أو القانون تتطلب ذلك.
+
+### تحقق قبول سريع
+
+بعد النشر، سجّل دفعة إنتاج بحساب موظف عمليات وتأكد من ظهورها بحالة `SUBMITTED`. سجّل دخول المدير العام واعتمد طلب مرتجع، ثم تحقق من ظهور قرار الاعتماد في `return_approval_events`. افتح `/audit` بحساب المدير العام وتأكد من ظهور `entry_hash` وحالة `متحقق`. افتح `/partner-dashboard` بحساب الشريك وتأكد من أن الصفحة قراءة فقط، وأن التوقيع يحفظ `content_hash` ولا يمكن تحديثه أو حذفه مباشرة.
+
+إذا فشل البريد، لا تعِد إرسال العملية المالية تلقائياً. افحص سجل الوظيفة و`request_id`، ثم أصلح Secret أو إعداد SMTP وأعد اختبار البريد التشغيلي فقط.
